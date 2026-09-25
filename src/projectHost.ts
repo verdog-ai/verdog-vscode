@@ -31,9 +31,9 @@ import { isStale, projectIn, subroutineIn, type ProjectSnapshot } from "../model
 import { TerminationAnalysis } from "./terminationAnalysis";
 
 export type Access = {
-  installed: boolean;
+  accessible: boolean;
   repository: string;
-  seat: boolean;
+  read: boolean;
   write: boolean;
 };
 
@@ -209,11 +209,7 @@ export async function findClone(): Promise<string | undefined> {
 }
 
 export function isEditable(host: HostState): boolean {
-  return (
-    vscode.workspace.isTrusted &&
-    host.preview === undefined &&
-    (host.access === undefined || !host.access.installed || host.access.write)
-  );
+  return vscode.workspace.isTrusted && host.preview === undefined;
 }
 
 /** Apply Verdog's ownership boundary to whichever ordinary file editor is active. */
@@ -509,6 +505,7 @@ export async function generate(host: OpenHost, root: string): Promise<boolean> {
   return result.code === 0;
 }
 
+/** Explicit catalogue permission lookup; local editing and compiler operations are independent. */
 export async function readAccess(host: OpenHost): Promise<void> {
   const result = await runVerdogCommand(host.root, ["access", "--json"], {
     announce: false,
@@ -517,43 +514,28 @@ export async function readAccess(host: OpenHost): Promise<void> {
     structured: true,
     trust: "caller-verified",
   });
+  host.access = undefined;
   if (result.code !== 0) {
-    host.access = undefined;
-    host.output.appendLine(
-      "verdog access could not be asked, so the canvas stays editable and the push " +
-        `decides: ${result.combined.trim()}`,
-    );
+    host.output.appendLine(`Catalogue permissions could not be read: ${result.combined.trim()}`);
     return;
   }
   try {
     const answer = JSON.parse(result.stdout) as {
-      installed?: unknown;
+      accessible?: unknown;
+      may_read?: unknown;
       may_write?: unknown;
       repository?: unknown;
-      seat?: unknown;
     };
+    if (typeof answer.accessible !== "boolean" || typeof answer.repository !== "string")
+      throw new Error("Expected an API 14 catalogue permission response.");
     host.access = {
-      installed: answer.installed !== false,
-      repository: typeof answer.repository === "string" ? answer.repository : "",
-      seat: answer.seat === true,
+      accessible: answer.accessible,
+      repository: answer.repository,
+      read: answer.may_read === true,
       write: answer.may_write === true,
     };
-    if (!host.access.installed) {
-      host.output.appendLine(
-        `Verdog cannot see ${host.access.repository}, and does not need to: nothing is ` +
-          "installed until you publish, and `check` needs no repository access at all.",
-      );
-    } else if (!host.access.write) {
-      host.output.appendLine(
-        `You have read access to ${host.access.repository}, so the canvas is read-only.`,
-      );
-    }
-    if (!host.access.seat) {
-      host.output.appendLine("This account has no Verdog seat, so `check` will be refused.");
-    }
   } catch {
-    host.access = undefined;
-    host.output.appendLine("verdog access returned something unreadable; leaving the canvas editable.");
+    host.output.appendLine("verdog access returned an unsupported catalogue permission response.");
   }
 }
 
@@ -740,7 +722,6 @@ export async function runVerb(
     }
   }
   if (verb === "check") {
-    if (host.preview === undefined) await readAccess(host);
     await refresh(host);
   }
   if (result.code !== 0) {

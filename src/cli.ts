@@ -49,6 +49,8 @@ export function verdog(
   arguments_: string[],
   options: {
     command?: string[];
+    /** A trusted editor setting; credentials are sent through stdin, never argv or env. */
+    backend?: { origin: string; token?: string };
     onLine?: (line: string) => void;
     onStderrLine?: (line: string) => void;
     onStdoutLine?: (line: string) => void;
@@ -66,7 +68,16 @@ export function verdog(
     }
     // A configurable launcher (for example uv) may have a Python child of its own.
     const processGroup = signal !== undefined && process.platform !== "win32";
-    const child = spawn(executable, [...prefix, ...arguments_], { cwd: root, detached: processGroup });
+    const env = { ...process.env };
+    delete env.VERDOG_BACKEND_ORIGIN;
+    delete env.VERDOG_SESSION_TOKEN_STDIN;
+    if (options.backend !== undefined) {
+      env.VERDOG_BACKEND_ORIGIN = options.backend.origin;
+      if (options.backend.token !== undefined) env.VERDOG_SESSION_TOKEN_STDIN = "1";
+    }
+    // An older CLI must reject this option instead of silently using its saved backend.
+    const backendArguments = options.backend === undefined ? [] : ["--backend-origin", options.backend.origin];
+    const child = spawn(executable, [...prefix, ...backendArguments, ...arguments_], { cwd: root, detached: processGroup, env });
     let combined = "";
     let stderr = "";
     let stdout = "";
@@ -126,6 +137,15 @@ export function verdog(
       finish({ code: 127, combined: combined + message, stderr: stderr + message, stdout });
     });
     child.once("close", (code) => finish({ code: signal?.aborted ? 130 : code ?? 1, combined, stderr, stdout }));
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+      // A process that fails before reading stdin reports its own exit status.
+      if (error.code !== "EPIPE" && error.code !== "ERR_STREAM_DESTROYED") {
+        child.kill();
+        const message = "The Verdog CLI input pipe failed.";
+        finish({ code: 1, combined: message, stderr: message, stdout: "" });
+      }
+    });
+    child.stdin.end(options.backend?.token ?? "");
   });
 }
 

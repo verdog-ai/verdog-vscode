@@ -24,7 +24,8 @@ import {
 } from "./catalogueReceipt";
 import { catalogueSyncPaths, decodeCatalogueSyncReceipt } from "./catalogueSyncReceipt";
 import { catalogueTargetEligible } from "./catalogueTargets";
-import { type Outcome, verdog } from "./cli";
+import type { Outcome } from "./cli";
+import { backendCommand as verdog } from "./verdogCommand";
 import {
   chooseSubroutineIn,
   cliCommand,
@@ -99,7 +100,7 @@ function authenticationFailure(code: string | undefined): boolean {
   return code !== undefined && /(?:auth|login|credential|token|principal)/i.test(code);
 }
 
-async function catalogueOutcome(root: string, query: CatalogueQuery): Promise<Outcome> {
+async function catalogueOutcome(root: string, query: CatalogueQuery, interactive: boolean): Promise<Outcome> {
   const arguments_ = ["catalogue", "--json"];
   if (query.query) arguments_.push("--query", query.query);
   if (query.visibility && query.visibility !== "all") {
@@ -107,18 +108,12 @@ async function catalogueOutcome(root: string, query: CatalogueQuery): Promise<Ou
   }
   if (query.cursor) arguments_.push("--cursor", query.cursor);
   if (arguments_.length > 2) arguments_.push("--limit", "50");
-  const result = await verdog(root, arguments_, { command: cliCommand() });
-  // A new extension may be paired with the immediately preceding CLI. Keep discovery useful;
-  // exact detail/inspection will still explain which newer command it needs.
-  if (result.code !== 0 && arguments_.length > 2 && !query.cursor) {
-    return verdog(root, ["catalogue", "--json"], { command: cliCommand() });
-  }
-  return result;
+  return verdog(root, arguments_, { command: cliCommand(), interactive });
 }
 
-async function readCatalogue(host: HostState, query: CatalogueQuery = {}): Promise<CatalogueListing> {
+async function readCatalogue(host: HostState, query: CatalogueQuery = {}, interactive = true): Promise<CatalogueListing> {
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
-  const listed = await catalogueOutcome(root, query);
+  const listed = await catalogueOutcome(root, query, interactive);
   if (listed.code !== 0) {
     const failure = cliFailure(listed);
     host.output.appendLine(listed.combined.trim() || "verdog catalogue produced no output.");
@@ -747,12 +742,11 @@ async function writableProjectAt(root: string): Promise<boolean> {
   }
 }
 
-async function importTarget(host: HostState, root: string): Promise<boolean> {
+async function importTarget(root: string): Promise<boolean> {
   const hasProject = await projectAt(root);
   const isPreview = hasProject && await readMarker(root) !== undefined;
   const writable = hasProject && await writableProjectAt(root);
   return catalogueTargetEligible({
-    accessAllowsWrite: root !== host.root || isEditable(host),
     hasProject,
     isPreview,
     writable,
@@ -762,12 +756,12 @@ async function importTarget(host: HostState, root: string): Promise<boolean> {
 async function chooseTargetProject(host: HostState): Promise<string | undefined> {
   const candidates = new Set<string>();
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    if (await importTarget(host, folder.uri.fsPath)) candidates.add(folder.uri.fsPath);
+    if (await importTarget(folder.uri.fsPath)) candidates.add(folder.uri.fsPath);
   }
-  if (host.preview?.origin !== undefined && await importTarget(host, host.preview.origin)) {
+  if (host.preview?.origin !== undefined && await importTarget(host.preview.origin)) {
     candidates.add(host.preview.origin);
   }
-  if (host.preview === undefined && host.root !== undefined && await importTarget(host, host.root)) {
+  if (host.preview === undefined && host.root !== undefined && await importTarget(host.root)) {
     candidates.add(host.root);
   }
   const roots = [...candidates];
@@ -841,10 +835,10 @@ class CatalogueView implements vscode.WebviewViewProvider {
     void this.view?.webview.postMessage({ kind: "listing", listing } satisfies HostToCatalogue);
   }
 
-  private async load(query: CatalogueQuery = this.query, append = false): Promise<void> {
+  private async load(query: CatalogueQuery = this.query, append = false, interactive = true): Promise<void> {
     const revision = ++this.revision;
     if (!append) this.post({ entries: [], state: "loading" });
-    const listing = await readCatalogue(this.host, query);
+    const listing = await readCatalogue(this.host, query, interactive);
     if (revision !== this.revision) return;
     this.query = { query: query.query, visibility: query.visibility };
     if (append && listing.state !== "unavailable" && listing.state !== "unauthenticated") {
@@ -861,6 +855,8 @@ class CatalogueView implements vscode.WebviewViewProvider {
   private async receive(message: CatalogueToHost): Promise<void> {
     switch (message.kind) {
       case "ready":
+        await this.load(this.query, false, false);
+        return;
       case "refresh":
         await this.load();
         return;

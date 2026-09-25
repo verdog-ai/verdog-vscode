@@ -1204,15 +1204,16 @@ export function registerProjectCommands(host: OpenHost): vscode.Disposable[] {
     ),
     vscode.commands.registerCommand("verdog.access", async () => {
       await readAccess(host);
-      await refresh(host);
+      const access = host.access;
       void vscode.window.showInformationMessage(
-        host.access === undefined
-          ? "Verdog: rights unknown (no remote, or the service could not be reached)"
-          : !host.access.installed
-            ? `Verdog: ${host.access.repository} — Verdog cannot see this repository, and does not need to. Install it only when you want to publish.`
-            : `Verdog: ${host.access.repository} — you may ${
-                host.access.write ? "read and write" : "read"
-              }, seat ${host.access.seat ? "yes" : "no"}`,
+        access === undefined
+          ? "Verdog: catalogue permissions unavailable (no remote, or the service could not be reached)."
+          : !access.accessible
+            ? `Verdog: your GitHub sign-in cannot access ${access.repository} in the catalogue. Local editing and compiler operations remain available.`
+            : `Verdog: ${access.repository} — catalogue permissions: ${[
+                access.read && "read",
+                access.write && "write",
+              ].filter(Boolean).join(", ") || "none"}.`,
       );
     }),
   ];

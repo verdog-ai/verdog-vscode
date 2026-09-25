@@ -126,3 +126,31 @@ test("diagnostic ranges use complete spans and retain a one-character fallback",
     [3, 1, 3, 2],
   );
 });
+
+
+test("backend origin is explicit and session credentials travel only through stdin", async () => {
+  const script = `
+    const chunks = [];
+    process.stdin.on('data', chunk => chunks.push(chunk));
+    process.stdin.on('end', () => process.stdout.write(JSON.stringify({
+      argv: process.argv.slice(1),
+      origin: process.env.VERDOG_BACKEND_ORIGIN,
+      inputFlag: process.env.VERDOG_SESSION_TOKEN_STDIN,
+      leaked: JSON.stringify(process.env).includes('test-session-secret'),
+      tokenReceived: Buffer.concat(chunks).toString() === 'test-session-secret',
+    })));
+  `;
+  for (const token of [undefined, "test-session-secret"]) {
+    const result = await verdog(process.cwd(), ["catalogue"], {
+      command: [process.execPath, "-e", script, "--"],
+      backend: { origin: "http://127.0.0.1:18765", token },
+    });
+    assert.equal(result.code, 0);
+    const received = JSON.parse(result.stdout);
+    assert.deepEqual(received.argv, ["--backend-origin", "http://127.0.0.1:18765", "catalogue"]);
+    assert.equal(received.origin, "http://127.0.0.1:18765");
+    assert.equal(received.inputFlag, token === undefined ? undefined : "1");
+    assert.equal(received.leaked, false);
+    assert.equal(received.tokenReceived, token !== undefined);
+  }
+});

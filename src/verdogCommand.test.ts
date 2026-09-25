@@ -1,6 +1,7 @@
 // AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import assert from "node:assert/strict";
 import * as path from "node:path";
+import { homedir } from "node:os";
 import { test } from "node:test";
 import { build } from "esbuild";
 import type * as vscode from "vscode";
@@ -9,6 +10,7 @@ import type { Outcome } from "./cli";
 
 /** Bundle the real policy module while replacing its editor and process boundaries. */
 async function load<T>(mocks: Record<string, Record<string, unknown>>): Promise<T> {
+  mocks = { "./backend": { backendOrigin: () => "https://157.180.79.112", backendSession: async () => undefined }, ...mocks };
   const key = `verdog-command-test-${Math.random()}`;
   const globals = globalThis as unknown as Record<string, unknown>;
   globals[key] = mocks;
@@ -223,4 +225,39 @@ test("editor and external cancellation both abort the process signal and dispose
   finish?.();
   await editorRun;
   assert.equal(listenerDisposed, true);
+});
+
+
+test("compiler calls are anonymous and catalogue calls use an origin-bound session", async () => {
+  const calls: Array<{ root: string; arguments: string[]; backend: unknown }> = [];
+  const interactive: boolean[] = [];
+  const module = await load<typeof import("./verdogCommand")>({
+    vscode: { workspace: { getConfiguration: () => ({ get: () => ["verdog"] }) } },
+    "./backend": {
+      backendOrigin: () => "https://157.180.79.112",
+      backendSession: async (prompt: boolean) => {
+        interactive.push(prompt);
+        return prompt ? { origin: "https://157.180.79.112", token: "session-for-test" } : undefined;
+      },
+    },
+    "./cli": { verdog: async (_root: string, args: string[], options: { backend: unknown }) => {
+      calls.push({ root: _root, arguments: args, backend: options.backend });
+      return success();
+    } },
+  });
+  for (const verb of ["generate", "check", "analyze", "rename", "init"]) {
+    await module.backendCommand("/project", [verb]);
+  }
+  assert.deepEqual(interactive, [], "opening and editing a graph must not request GitHub credentials");
+  assert.ok(calls.every((call) => JSON.stringify(call.backend) === JSON.stringify({ origin: "https://157.180.79.112" })));
+  const passive = await module.backendCommand("/project", ["catalogue", "--json"], { interactive: false });
+  assert.equal(JSON.parse(passive.stdout).error.code, "auth.required");
+  assert.equal(calls.length, 5);
+  for (const verb of ["catalogue", "access", "import", "publish"]) {
+    await module.backendCommand("/project", [verb]);
+  }
+  assert.deepEqual(interactive, [false, true, true, true, true]);
+  assert.equal(calls.find((call) => call.arguments[0] === "catalogue")?.root, homedir());
+  assert.equal(calls.find((call) => call.arguments[0] === "import")?.root, "/project");
+  assert.deepEqual(calls.at(-1)?.backend, { origin: "https://157.180.79.112", token: "session-for-test" });
 });

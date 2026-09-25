@@ -5,7 +5,6 @@ import { test } from "node:test";
 import { catalogueTargetEligible, type CatalogueTargetFacts } from "./catalogueTargets";
 
 const editable: CatalogueTargetFacts = {
-  accessAllowsWrite: true,
   hasProject: true,
   isPreview: false,
   writable: true,

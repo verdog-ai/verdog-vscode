@@ -17,6 +17,10 @@ import { terminationRevision, type TerminationReport } from "../model/terminatio
 
 /** Bundle the real host code with just its editor/IO boundaries replaced in memory. */
 async function load<T>(entry: string, mocks: Record<string, Record<string, unknown>>): Promise<T> {
+  mocks = {
+    "./backend": { backendOrigin: () => "https://157.180.79.112", backendSession: async () => ({ origin: "https://157.180.79.112", token: "test-session" }) },
+    ...mocks,
+  };
   const key = `verdog-test-${entry}-${Math.random()}`;
   const globals = globalThis as unknown as Record<string, unknown>;
   globals[key] = mocks;
@@ -366,6 +370,10 @@ test("workspace trust centrally gates editing and executable workflow verbs", as
   assert.equal(isEditable(state), false);
   trusted = true;
   assert.equal(isEditable(state), true);
+  state.access = { accessible: false, repository: "owner/project", read: false, write: false };
+  assert.equal(isEditable(state), true, "catalogue permissions cannot restrict local editing");
+  state.access = { ...state.access, accessible: true, read: true };
+  assert.equal(isEditable(state), true, "read-only catalogue access cannot restrict local editing");
   trusted = false;
   for (const verb of ["check", "run", "sync"] as const) await runVerb(state, state.root, verb);
   assert.equal(calls, 0);
@@ -374,6 +382,33 @@ test("workspace trust centrally gates editing and executable workflow verbs", as
   trusted = true;
   await runVerb(state, state.root, "run", ["argument with spaces"]);
   assert.equal(calls, 1);
+});
+
+test("explicit access lookup accepts API 14 catalogue permissions without changing editing", async () => {
+  let response: unknown = {
+    repository: "owner/project", accessible: false, may_read: false, may_write: false, seat: false,
+  };
+  const { readAccess, isEditable } = await load<typeof import("./projectHost")>("projectHost.ts", {
+    vscode: { workspace: { isTrusted: true } },
+    "./verdogCommand": {
+      cliCommand: () => ["verdog"],
+      runVerdogCommand: async (_root: string, args: string[]) => {
+        assert.deepEqual(args, ["access", "--json"]);
+        return { code: 0, stdout: JSON.stringify(response), stderr: "", combined: "" };
+      },
+    },
+  });
+  const state = host();
+  await readAccess(state);
+  assert.deepEqual(state.access, { repository: "owner/project", accessible: false, read: false, write: false });
+  assert.equal(isEditable(state), true);
+  response = { repository: "owner/project", accessible: true, may_read: true, may_write: true };
+  await readAccess(state);
+  assert.deepEqual(state.access, { repository: "owner/project", accessible: true, read: true, write: true });
+  response = { repository: "owner/project", installed: true, may_write: false };
+  await readAccess(state);
+  assert.equal(state.access, undefined, "legacy installation flags do not grant catalogue permissions");
+  assert.equal(isEditable(state), true);
 });
 
 test("property action handlers return the actual edit or rename result, including cancellation", async () => {

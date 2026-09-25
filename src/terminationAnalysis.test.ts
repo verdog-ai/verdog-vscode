@@ -166,6 +166,21 @@ test("mismatched hashes, invalid output, and CLI or service failures are unavail
   }
 });
 
+test("anonymous analysis failure asks for a service connection, not sign-in", async () => {
+  const analysis = new TerminationAnalysis(
+    async () => ({ code: 1, stdout: "", stderr: "", combined: "" }), () => {}, 1,
+  );
+  try {
+    analysis.update(report().projects);
+    await delay(10);
+    assert.equal(analysis.state?.status, "unavailable");
+    if (analysis.state?.status === "unavailable") {
+      assert.match(analysis.state.reason, /service connection/);
+      assert.doesNotMatch(analysis.state.reason, /sign-in|login/);
+    }
+  } finally { analysis.dispose(); }
+});
+
 test("an unavailable worker retries unchanged graphs after repair and caches only the successful report", async () => {
   let calls = 0;
   const analysis = new TerminationAnalysis(async () => ++calls === 1

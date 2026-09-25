@@ -134,7 +134,7 @@ export class TerminationAnalysis {
         : report !== undefined && terminationRevision(report) === key
           ? { status: "ready", report }
           : { status: "unavailable", reason: result.code !== 0
-              ? result.stderr.trim() || "Analysis failed. Check the Verdog service connection and sign-in, then refresh the graph."
+              ? result.stderr.trim() || "Analysis failed. Check the Verdog service connection, then refresh the graph."
               : report === undefined
                 ? "The Verdog analysis service returned an unsupported report."
                 : owners.some((owner) => !Object.hasOwn(report.projects, owner))

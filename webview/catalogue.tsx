@@ -155,10 +155,13 @@ function CatalogueSidebar({ initial }: { initial: CatalogueListing }) {
       </header>
       <div aria-live="polite" className="sidebar-status">
         {listing.state === "loading" ? "Consulting the catalogue…" : undefined}
-        {listing.state === "unauthenticated" ? "Sign in with `verdog login` to consult the catalogue." : undefined}
+        {listing.state === "unauthenticated" ? (
+          <><button onClick={() => host.postMessage({ kind: "refresh" })} type="button">Sign in with GitHub</button>
+          <p>GitHub sign-in with read:user does not grant access to private repositories.</p></>
+        ) : undefined}
         {listing.state === "unavailable" ? listing.detail ?? "The catalogue is unavailable." : undefined}
       </div>
-      {listing.state !== "loading" && shown.length === 0 ? (
+      {listing.state !== "loading" && listing.state !== "unauthenticated" && shown.length === 0 ? (
         <p className="empty-note">
           {listing.entries.length === 0 ? "No workflow records are available." : "No records match this query."}
         </p>

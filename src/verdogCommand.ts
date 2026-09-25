@@ -2,8 +2,10 @@
 /** VS Code policy around invoking the platform-neutral Verdog CLI process. */
 
 import * as vscode from "vscode";
+import { homedir } from "node:os";
 
 import { type Outcome, verdog } from "./cli";
+import { backendOrigin, backendSession } from "./backend";
 
 export type CommandTrust = "required" | "caller-verified";
 
@@ -36,6 +38,30 @@ export function cliCommand(): string[] {
   )
     ? configured
     : ["verdog"];
+}
+
+/** All service calls use the trusted editor origin, independent of a clone or CLI login. */
+export async function backendCommand(
+  root: string,
+  arguments_: string[],
+  options: NonNullable<Parameters<typeof verdog>[2]> & { interactive?: boolean } = {},
+): Promise<Outcome> {
+  try {
+    const authenticated = ["catalogue", "access", "import", "publish", "retract", "token", "whoami"].includes(arguments_[0]);
+    const backend = authenticated
+      ? await backendSession(options.interactive ?? true)
+      : { origin: backendOrigin() };
+    if (backend === undefined) {
+      const message = "Sign in with GitHub to use the Verdog catalogue.";
+      return { code: 1, stdout: JSON.stringify({ error: { code: "auth.required", message } }), stderr: message, combined: message };
+    }
+    // Browsing is available in Restricted Mode: a launcher must not resolve code from that workspace.
+    const directory = ["catalogue", "whoami"].includes(arguments_[0]) ? homedir() : root;
+    return await verdog(directory, arguments_, { ...options, command: options.command ?? cliCommand(), backend });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The Verdog backend request failed.";
+    return { code: 1, stdout: "", stderr: message, combined: message };
+  }
 }
 
 const shellDisplay = (part: string): string =>
@@ -102,7 +128,7 @@ export async function runVerdogCommand(
   ): Promise<Outcome> => {
     const linked = linkedSignal(options.signal, token);
     try {
-      return await verdog(root, [...arguments_], {
+      return await backendCommand(root, [...arguments_], {
         command: cliCommand(),
         signal: linked.signal,
         onStderrLine: streamOutput || options.progress?.reportStderr

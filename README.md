@@ -8,17 +8,40 @@ The canvas sits beside your code, with results in the Runs view.
 ## Installation
 
 Requires VS Code **1.106 or newer** and the separately installed
-`verdog` CLI. Installing
+`verdog` CLI with **API 14** support. Installing
 [verdog-runtime](https://github.com/verdog-ai/verdog-runtime) alone does not install the CLI.
 
 Install a release VSIX with **Extensions: Install from VSIX…**, then open a Verdog project
 folder containing `project.json` and run **Verdog: Show Canvas**. Use **Verdog: New Project**
 to create a project. The extension calls the CLI for generation, analysis, checks, and execution.
-Generation, analysis, Check, and Rename require access to your configured Verdog service.
+Generation, analysis, Check, and Rename use your configured Verdog service anonymously;
+GitHub sign-in is not required for editing or compiler operations.
 **In trusted workspaces, opening or refreshing a graph automatically sends project manifests
 for analysis. Structural canvas edits, New Project, and catalogue imports send declared project
 files for generation; Check and Rename also send declared project files.**
 See the [privacy policy](PRIVACY.md) for automatic requests, storage, and workflow providers.
+
+## Backend and sign-in
+
+The default backend is **`https://157.180.79.112`**. To use another deployment, set
+`verdog.backendOrigin` in **User Settings**, for example:
+
+```json
+{
+  "verdog.backendOrigin": "https://157.180.79.112"
+}
+```
+
+Use an origin without `/api/v1`. HTTPS is required except for loopback addresses;
+`http://127.0.0.1:18765` can be used for an SSH tunnel. Workspace settings and project files
+cannot choose where the extension sends sign-in tokens. Choose a backend you trust:
+compiler requests send manifests and, for generation, checking, and renaming, declared source files.
+
+Catalogue browsing, publishing, and importing use VS Code's built-in **GitHub sign-in**.
+The extension requests `read:user` and exchanges that GitHub token with the configured backend
+for a Verdog session stored in VS Code **SecretStorage**. This scope cannot access private
+catalogue repositories; the extension does not request broad `repo` access. Git cloning uses
+your Git credentials separately. No GitHub App secrets are included in the extension.
 
 ## Development and packaging
 
@@ -28,7 +51,7 @@ Use Node.js 22 or newer (`nvm use` if available):
 npm ci
 npm test
 npm run package
-code --install-extension verdog-vscode-0.0.1.vsix
+code --install-extension verdog-vscode-0.0.3.vsix
 ```
 
 Packaging type-checks and builds the extension first. To launch a development window:
@@ -115,7 +138,7 @@ path containing spaces is one array item. The former string-valued `verdog.path`
 | *Connect Two Nodes*, *Constrain an Edge* | what the canvas gestures do, from the palette |
 | *Check*, *Run Workflow* | the CLI |
 | *Resume Run*, *Restart Run*, *Fork Run* | continues a committed local run, restarts its launch, or branches a selected checkpoint from the Runs view |
-| *Show My Access* | what GitHub says you may do in this repository |
+| *Show My Access* | catalogue permissions for the current repository; these do not restrict editing |
 
 There is no *Save Revision* any more. Committing is git's, and VS Code already has the whole
 of git — so each structural canvas edit writes `project.json` and asks the service to refresh
@@ -145,7 +168,7 @@ five, and what is left is the graph — drawing it, navigating from it, and edit
 | a file explorer | the workspace, which *is* the clone |
 | a diagnostics list | the Problems panel, from `verdog check --json` |
 | a design system | `--vscode-*` custom properties |
-| session, CSRF, capabilities | the session `verdog login` stores, used by the CLI |
+| GitHub sign-in and session storage | VS Code authentication and SecretStorage |
 | revision history | `git log`, the Timeline view, and GitHub |
 | commit, push, branch, merge | the Source Control panel |
 
@@ -196,23 +219,18 @@ else cannot reach them. So the record earned nothing and it is gone.
 returned scaffolds locally. `verdog check` uses the same service and adds local type checking.
 Automatic termination analysis sends saved project manifests, including pinned dependencies,
 to the service in trusted workspaces. Restricted Mode keeps the canvas readable without sending
-those manifests; granting Workspace Trust starts analysis. If the service or authentication is
-unavailable, analysis shows the failure and generation reports that files could not be refreshed.
+those manifests; granting Workspace Trust starts analysis. If the service is unavailable, analysis shows the failure and generation reports that files
+could not be refreshed.
 Adding a node is one step: what it receives is whatever you wire into it,
 so there is no contract to reconcile afterwards. Declare what it *emits*, and let the type
 checker tell you which arriving cases its `run_impl` does not handle yet.
 
-## Rights
+## Permissions
 
-Editing is offered only when GitHub says you may: `verdog access` asks -- one call with your
-own token -- and the answer gates the handles, the toolbar and the delete key. Asked again
-after every check, because a repository token acts as whoever issued it and their access can be
-reduced.
-
-If the question cannot be put, the canvas stays editable in a trusted workspace. A clone with
-no GitHub remote has no repository permissions to ask about. Generation, analysis, and Check
-still require an authenticated service; a failed generation leaves the saved graph available
-for a later retry. GitHub permissions are enforced when pushing.
+Local graph editing and compiler operations require Workspace Trust, not catalogue permissions,
+a GitHub session, or a seat. Inspection checkouts remain read-only. **Show My Access** explicitly
+asks the service for catalogue permissions on the current repository; opening or checking a
+project does not make that request. GitHub permissions are enforced when pushing or publishing.
 
 ## Structure
 

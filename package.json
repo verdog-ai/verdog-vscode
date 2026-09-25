@@ -2,7 +2,7 @@
   "name": "verdog-vscode",
   "displayName": "Verdog",
   "description": "Author a Verdog project from the clone on disk: the workflow canvas, check and run.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "publisher": "verdog",
   "engines": {
@@ -160,6 +160,12 @@
             "verdog"
           ],
           "markdownDescription": "The executable and arguments used to run the Verdog CLI. Install the CLI from the verdog repository, or use one item for an executable path containing spaces."
+        },
+        "verdog.backendOrigin": {
+          "type": "string",
+          "default": "https://157.180.79.112",
+          "scope": "application",
+          "markdownDescription": "Trusted Verdog backend origin for API 14. Compiler requests are anonymous; catalogue actions use GitHub sign-in. Project files cannot override this user setting. HTTPS is required except for loopback HTTP (for example an SSH tunnel)."
         }
       }
     },

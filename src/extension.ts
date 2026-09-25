@@ -2,6 +2,7 @@
 import * as vscode from "vscode";
 
 import { registerCanvas, showCanvas } from "./canvasView";
+import { initializeBackend } from "./backend";
 import { registerCatalogue, registerPreviewCommands } from "./catalogueView";
 import { readMarker } from "./checkout";
 import { REVEAL_CANVAS, newProject } from "./newProject";
@@ -12,7 +13,6 @@ import {
   cliCommand,
   findClone,
   hasProject,
-  readAccess,
   refresh,
   selectWorkflowEnvironment,
   syncActiveEditorReadonly,
@@ -20,6 +20,7 @@ import {
 } from "./projectHost";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  initializeBackend(context);
   const output = vscode.window.createOutputChannel("Verdog");
   const problems = vscode.languages.createDiagnosticCollection("verdog");
   context.subscriptions.push(output, problems);
@@ -74,9 +75,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return;
   }
 
-  const access = readAccess(host);
   const snapshot = await refresh(host);
-  void access.then(() => refresh(host));
   const rootWorkflow = snapshot === undefined
     ? undefined
     : definitionIndex(snapshot.project).rootWorkflow;

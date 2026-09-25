@@ -15,7 +15,7 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
-import { verdog } from "./cli";
+import { backendCommand as verdog } from "./verdogCommand";
 import { packageFrom, packageProblem } from "../model/names";
 
 /** Set before the window reloads, so the canvas is showing when it comes back. */
