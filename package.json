@@ -1,0 +1,297 @@
+{
+  "name": "verdog-vscode",
+  "displayName": "Verdog",
+  "description": "Author a Verdog project from the clone on disk: the workflow canvas, check and run.",
+  "version": "0.0.1",
+  "private": true,
+  "publisher": "verdog",
+  "engines": {
+    "vscode": "^1.106.0",
+    "node": ">=22"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Read-only catalogue inspection remains available in Restricted Mode. Running or editing workflow code requires Workspace Trust.",
+      "restrictedConfigurations": [
+        "verdog.command"
+      ]
+    }
+  },
+  "categories": [
+    "Programming Languages",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "workspaceContains:project.json",
+    "onCommand:verdog.newProject",
+    "onView:verdog.catalogue",
+    "onView:verdog.runs"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "verdog.newProject",
+        "title": "Verdog: New Project"
+      },
+      {
+        "command": "verdog.openCanvas",
+        "title": "Verdog: Show Canvas"
+      },
+      {
+        "command": "verdog.canvasBack",
+        "title": "Verdog: Canvas Back"
+      },
+      {
+        "command": "verdog.canvasForward",
+        "title": "Verdog: Canvas Forward"
+      },
+      {
+        "command": "verdog.addNode",
+        "title": "Verdog: Add Node"
+      },
+      {
+        "command": "verdog.addDefinition",
+        "title": "Verdog: Add Definition"
+      },
+      {
+        "command": "verdog.addCall",
+        "title": "Verdog: Add Call"
+      },
+      {
+        "command": "verdog.addFeature",
+        "title": "Verdog: Add Feature"
+      },
+      {
+        "command": "verdog.addProfile",
+        "title": "Verdog: Add Agent Profile"
+      },
+      {
+        "command": "verdog.addSession",
+        "title": "Verdog: Add Agent Session"
+      },
+      {
+        "command": "verdog.deleteEntity",
+        "title": "Verdog: Delete Entity"
+      },
+      {
+        "command": "verdog.check",
+        "title": "Verdog: Check"
+      },
+      {
+        "command": "verdog.run",
+        "title": "Verdog: Run Workflow"
+      },
+      {
+        "command": "verdog.refreshRuns",
+        "title": "Verdog: Refresh Runs",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "verdog.resumeRun",
+        "title": "Verdog: Resume Run",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "verdog.restartRun",
+        "title": "Verdog: Restart Run",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "verdog.forkRun",
+        "title": "Verdog: Fork Run",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "verdog.openRunOutput",
+        "title": "Verdog: Open Run Output",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "verdog.catalogue",
+        "title": "Verdog: Browse Published Workflows"
+      },
+      {
+        "command": "verdog.manageCatalogueCache",
+        "title": "Verdog: Manage Catalogue Cache"
+      },
+      {
+        "command": "verdog.closePreview",
+        "title": "Verdog: Close This Preview",
+        "icon": "$(close)"
+      },
+      {
+        "command": "verdog.access",
+        "title": "Verdog: Show My Access"
+      },
+      {
+        "command": "verdog.connect",
+        "title": "Verdog: Connect Two Nodes"
+      },
+      {
+        "command": "verdog.constrain",
+        "title": "Verdog: Constrain an Edge"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "verdog.canvasBack",
+        "key": "ctrl+alt+-",
+        "when": "focusedView == verdog.canvas"
+      },
+      {
+        "command": "verdog.canvasForward",
+        "key": "ctrl+shift+-",
+        "when": "focusedView == verdog.canvas"
+      }
+    ],
+    "configuration": {
+      "title": "Verdog",
+      "properties": {
+        "verdog.command": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "default": [
+            "verdog"
+          ],
+          "markdownDescription": "The executable and arguments used to run the Verdog CLI. Install the CLI from the verdog repository, or use one item for an executable path containing spaces."
+        }
+      }
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "verdog.closePreview",
+          "group": "navigation@1",
+          "when": "view == verdog.canvas && verdog.preview"
+        },
+        {
+          "command": "verdog.refreshRuns",
+          "group": "navigation@1",
+          "when": "view == verdog.runs"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "verdog.resumeRun",
+          "group": "inline@1",
+          "when": "view == verdog.runs && viewItem =~ /verdogRun.*resume/"
+        },
+        {
+          "command": "verdog.restartRun",
+          "group": "inline@2",
+          "when": "view == verdog.runs && viewItem =~ /verdogRun/"
+        },
+        {
+          "command": "verdog.forkRun",
+          "group": "inline@3",
+          "when": "view == verdog.runs && viewItem =~ /verdogRun.*fork/"
+        },
+        {
+          "command": "verdog.openRunOutput",
+          "group": "navigation@1",
+          "when": "view == verdog.runs && viewItem =~ /verdogRun/"
+        }
+      ]
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": "project.json",
+        "url": "./schemas/project.schema.json"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "verdogCatalogue",
+          "title": "Verdog Catalogue",
+          "icon": "media/catalogue.svg"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "verdog",
+          "title": "Verdog",
+          "icon": "media/canvas.svg"
+        }
+      ]
+    },
+    "views": {
+      "verdog": [
+        {
+          "type": "webview",
+          "id": "verdog.canvas",
+          "name": "Workflow",
+          "contextualTitle": "Verdog"
+        },
+        {
+          "id": "verdog.runs",
+          "name": "Runs",
+          "contextualTitle": "Verdog Runs"
+        }
+      ],
+      "verdogCatalogue": [
+        {
+          "type": "webview",
+          "id": "verdog.catalogue",
+          "name": "Published workflows",
+          "contextualTitle": "Verdog Catalogue"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.host.json && tsc -p tsconfig.webview.json",
+    "test": "node build-tests.mjs && node --test --test-concurrency=12 \"dist-test/**/*.test.mjs\"",
+    "package": "vsce package --no-dependencies",
+    "test:integration": "node build-tests.mjs --integration && node --test --test-concurrency=12 \"dist-test-integration/**/*.test.mjs\"",
+    "vscode:prepublish": "npm run typecheck && npm run build"
+  },
+  "devDependencies": {
+    "@types/d3-selection": "^3.0.11",
+    "@types/markdown-it": "^14.2.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/vscode": "1.106.0",
+    "@vscode/vsce": "^3",
+    "ajv": "^8.20.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "d3-graphviz": "5.6.0",
+    "d3-selection": "3.0.0",
+    "dompurify": "^3.4.15",
+    "jsonc-parser": "^3.3.1",
+    "markdown-it": "^14.3.2",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/verdog-ai/verdog-vscode"
+  },
+  "license": "AGPL-3.0-only",
+  "homepage": "https://verdog.ai",
+  "bugs": {
+    "url": "https://github.com/verdog-ai/verdog-vscode/issues"
+  },
+  "files": [
+    "dist/*.js",
+    "dist/*.css",
+    "dist/THIRD_PARTY_NOTICES.txt",
+    "media/*.svg",
+    "media/icon.png",
+    "schemas/*.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "icon": "media/icon.png"
+}

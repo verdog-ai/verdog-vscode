@@ -1,0 +1,8 @@
+<!-- Three nodes on one path: the smallest picture of a workflow. Currentcolor, as VS Code
+     recolours an activity icon for the active state and the theme. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+  <rect x="8.5" y="2.5" width="7" height="5" rx="1.5"/>
+  <rect x="8.5" y="9.5" width="7" height="5" rx="1.5"/>
+  <rect x="8.5" y="16.5" width="7" height="5" rx="2.5"/>
+  <path d="M12 7.5v2M12 14.5v2"/>
+</svg>

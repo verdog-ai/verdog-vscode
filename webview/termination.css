@@ -1,0 +1,51 @@
+.termination-badge {
+  align-items: center;
+  background: var(--vscode-editorWidget-background, transparent);
+  border: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
+  border-radius: 12px;
+  color: var(--vscode-descriptionForeground);
+  display: inline-flex;
+  flex-wrap: wrap;
+  font: inherit;
+  font-size: 12px;
+  gap: 6px;
+  padding: 4px 10px;
+}
+button.termination-badge { cursor: pointer; }
+button.termination-badge:hover { background: var(--vscode-toolbar-hoverBackground); }
+.termination-badge.certified { color: var(--vscode-testing-iconPassed, var(--vscode-foreground)); }
+.termination-badge.not_certified { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+.termination-heading { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.termination-heading h2 { font-size: 1em; margin: 0; }
+.termination-section {
+  border-top: 1px solid var(--vscode-panel-border);
+  margin: 20px 0;
+  max-width: 46rem;
+  padding-top: 16px;
+}
+.termination-summary { color: var(--vscode-descriptionForeground); margin: 12px 0; }
+.termination-summary > div { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0; }
+.termination-summary dt { flex: 0 0 11rem; }
+.termination-summary dd { color: var(--vscode-foreground); margin: 0; }
+.termination-section details { margin-top: 10px; }
+.termination-region > summary { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+.termination-witnesses { list-style: none; padding: 0; }
+.termination-witnesses > li { border-left: 2px solid var(--vscode-panel-border); margin: 12px 0; padding-left: 12px; }
+.termination-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.termination-section .tree { max-height: 24rem; overflow: auto; }
+.edge-termination-cleared { color: var(--vscode-testing-iconPassed, var(--vscode-charts-green, var(--vscode-foreground))); }
+.edge-termination-remaining { color: var(--vscode-editorWarning-foreground, var(--vscode-foreground)); }
+.edge-termination-unreachable,
+.edge-termination-unavailable,
+.edge-termination-checking { color: var(--vscode-descriptionForeground); }
+.edge-termination-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; margin: 12px 0; }
+.edge-termination-legend > span { white-space: nowrap; }
+.termination-cycle { max-height: 26rem; overflow: auto; margin: 16px 0; }
+.termination-cycle table { border-collapse: collapse; text-align: left; width: 100%; }
+.termination-cycle caption { font-weight: 600; padding: 0 0 8px; text-align: left; }
+.termination-cycle th,
+.termination-cycle td { border-bottom: 1px solid var(--vscode-panel-border); padding: 6px 8px; vertical-align: top; }
+.termination-cycle th { color: var(--vscode-descriptionForeground); font-size: 0.9em; font-weight: 500; }
+.termination-cycle td > code { display: block; overflow-wrap: anywhere; padding: 4px 0; }
+.termination-cycle .tree { margin: 0; padding: 0; }
+.termination-cycle .navigation-entry { min-height: 24px; }

@@ -1,0 +1,268 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://verdog.ai/schemas/run-history-v1.schema.json",
+  "title": "Verdog run-history CLI response",
+  "description": "Versioned machine-readable responses for runs, checkpoints, and lifecycle operations.",
+  "oneOf": [
+    { "$ref": "#/definitions/runsEnvelope" },
+    { "$ref": "#/definitions/checkpointsEnvelope" },
+    { "$ref": "#/definitions/operationEnvelope" },
+    { "$ref": "#/definitions/errorEnvelope" }
+  ],
+  "definitions": {
+    "schemaVersion": { "const": 1 },
+    "safeNonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "safePositiveInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "nullableSafePositiveInteger": {
+      "anyOf": [
+        { "$ref": "#/definitions/safePositiveInteger" },
+        { "type": "null" }
+      ]
+    },
+    "workflowIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "definition_id", "module"],
+      "properties": {
+        "id": { "type": "string" },
+        "definition_id": { "type": "string" },
+        "module": { "type": "string" }
+      }
+    },
+    "runParent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "operation", "checkpoint", "arguments"],
+      "properties": {
+        "run_id": { "type": "string" },
+        "operation": { "enum": ["restart", "fork"] },
+        "checkpoint": { "$ref": "#/definitions/nullableSafePositiveInteger" },
+        "arguments": { "enum": ["reused", "overridden", "checkpoint"] }
+      }
+    },
+    "sessionIssue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["address", "provider", "code", "message"],
+      "properties": {
+        "address": { "type": "string" },
+        "provider": { "type": "string" },
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "runSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "directory_name",
+        "workflow",
+        "status",
+        "started_at",
+        "updated_at",
+        "output_dir",
+        "launch",
+        "parent",
+        "checkpoints",
+        "sessions"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "directory_name": { "type": "string" },
+        "workflow": { "$ref": "#/definitions/workflowIdentity" },
+        "status": { "enum": ["running", "interrupted", "failed", "succeeded"] },
+        "started_at": { "type": "string" },
+        "updated_at": { "type": "string" },
+        "output_dir": { "type": "string" },
+        "launch": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["workflow_arguments", "checkpointing"],
+          "properties": {
+            "workflow_arguments": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "checkpointing": { "enum": ["auto", "required", "off"] }
+          }
+        },
+        "parent": {
+          "anyOf": [
+            { "$ref": "#/definitions/runParent" },
+            { "type": "null" }
+          ]
+        },
+        "checkpoints": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "count",
+            "latest_completed",
+            "latest_restorable",
+            "resume_available",
+            "unavailable_code",
+            "unavailable_reason"
+          ],
+          "properties": {
+            "count": { "$ref": "#/definitions/safeNonNegativeInteger" },
+            "latest_completed": { "$ref": "#/definitions/nullableSafePositiveInteger" },
+            "latest_restorable": { "$ref": "#/definitions/nullableSafePositiveInteger" },
+            "resume_available": { "type": "boolean" },
+            "unavailable_code": { "type": ["string", "null"] },
+            "unavailable_reason": { "type": ["string", "null"] }
+          }
+        },
+        "sessions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["persistent", "model", "branch_available", "issues"],
+          "properties": {
+            "persistent": { "$ref": "#/definitions/safeNonNegativeInteger" },
+            "model": { "enum": ["copy-on-write", "legacy"] },
+            "branch_available": { "type": "boolean" },
+            "issues": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/sessionIssue" }
+            }
+          }
+        }
+      }
+    },
+    "boundarySummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_path", "graph", "node", "visit", "call_path"],
+      "properties": {
+        "project_path": { "type": "string" },
+        "graph": { "type": "string" },
+        "node": { "type": "string" },
+        "visit": { "$ref": "#/definitions/safePositiveInteger" },
+        "call_path": { "type": "string" }
+      }
+    },
+    "nullableBoundarySummary": {
+      "anyOf": [
+        { "$ref": "#/definitions/boundarySummary" },
+        { "type": "null" }
+      ]
+    },
+    "checkpointSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "created_at",
+        "kind",
+        "completed",
+        "next",
+        "restore_available",
+        "fork_with_branch_available",
+        "fork_with_fresh_available",
+        "unavailable_code",
+        "unavailable_reason"
+      ],
+      "properties": {
+        "sequence": { "$ref": "#/definitions/safePositiveInteger" },
+        "created_at": { "type": "string" },
+        "kind": {
+          "enum": ["entry", "node", "child-start", "child-return", "terminal"]
+        },
+        "completed": { "$ref": "#/definitions/nullableBoundarySummary" },
+        "next": { "$ref": "#/definitions/nullableBoundarySummary" },
+        "restore_available": { "type": "boolean" },
+        "fork_with_branch_available": { "type": "boolean" },
+        "fork_with_fresh_available": { "type": "boolean" },
+        "unavailable_code": { "type": ["string", "null"] },
+        "unavailable_reason": { "type": ["string", "null"] }
+      }
+    },
+    "operationError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "details": {}
+      }
+    },
+    "runsEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "operation", "project", "runs"],
+      "properties": {
+        "schema_version": { "$ref": "#/definitions/schemaVersion" },
+        "operation": { "const": "runs" },
+        "project": { "type": "string" },
+        "runs": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/runSummary" }
+        }
+      }
+    },
+    "checkpointsEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "operation", "run", "checkpoints"],
+      "properties": {
+        "schema_version": { "$ref": "#/definitions/schemaVersion" },
+        "operation": { "const": "checkpoints" },
+        "run": { "$ref": "#/definitions/runSummary" },
+        "checkpoints": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/checkpointSummary" }
+        }
+      }
+    },
+    "operationEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "status",
+        "source_run_id",
+        "source_checkpoint",
+        "sessions",
+        "arguments",
+        "run"
+      ],
+      "properties": {
+        "schema_version": { "$ref": "#/definitions/schemaVersion" },
+        "operation": { "enum": ["resume", "restart", "fork"] },
+        "status": { "enum": ["succeeded", "failed", "interrupted"] },
+        "source_run_id": { "type": "string" },
+        "source_checkpoint": { "$ref": "#/definitions/nullableSafePositiveInteger" },
+        "sessions": { "enum": ["restore", "branch", "fresh"] },
+        "arguments": { "enum": ["checkpoint", "reused", "overridden"] },
+        "run": { "$ref": "#/definitions/runSummary" },
+        "error": {
+          "anyOf": [
+            { "$ref": "#/definitions/operationError" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "errorEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "error"],
+      "properties": {
+        "schema_version": { "$ref": "#/definitions/schemaVersion" },
+        "operation": { "type": "string" },
+        "status": { "const": "error" },
+        "error": { "$ref": "#/definitions/operationError" }
+      }
+    }
+  }
+}

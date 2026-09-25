@@ -1,0 +1,419 @@
+.navigation-entry {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  min-height: 30px;
+  padding: 1px 0;
+}
+
+.page-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.page-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-kind {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+
+.page-title-id { font-family: var(--vscode-editor-font-family), monospace; }
+
+.scope-breadcrumb {
+  align-items: center;
+  color: var(--vscode-descriptionForeground);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 0.95em;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.breadcrumb-link {
+  background: transparent;
+  border-color: transparent;
+  color: var(--vscode-textLink-foreground);
+  min-height: 24px;
+  padding: 2px 4px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.breadcrumb-link:not(:disabled):hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
+}
+
+.tree-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.tree-actions button { font-size: 0.9em; padding-inline: 8px; }
+
+.history-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.history-actions button {
+  font-size: 16px;
+  height: 28px;
+  line-height: 1;
+  padding: 0;
+  width: 28px;
+}
+
+.history-actions button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.navigation-entry > a {
+  align-items: baseline;
+  color: var(--vscode-textLink-foreground);
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 4px;
+  padding: 4px;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.navigation-entry > a:hover {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
+}
+
+.navigation-entry > a:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.delete-entry {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--vscode-errorForeground);
+  line-height: 0;
+  height: 28px;
+  padding: 5px;
+  width: 28px;
+}
+
+.navigation-entry > .delete-entry,
+.constraint-row > .delete-entry {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.delete-entry:not(:disabled):hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.delete-entry:disabled {
+  color: var(--vscode-disabledForeground);
+  opacity: 0.7;
+}
+
+.delete-entry svg {
+  fill: currentColor;
+  height: 14px;
+  width: 14px;
+}
+
+.navigation-entry > .references {
+  flex-basis: 100%;
+  margin-left: 8px;
+}
+
+.references > summary {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.status-list {
+  margin: 0;
+  max-width: 46rem;
+  padding: 0;
+}
+
+.status-list > div {
+  border-bottom: 1px solid var(--vscode-panel-border);
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  padding: 12px 0;
+}
+
+.status-list dt,
+.status-note,
+.status-current {
+  color: var(--vscode-descriptionForeground);
+}
+
+.status-list dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.status-warning {
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.status-note {
+  max-width: 60ch;
+}
+
+.properties {
+  max-width: 46rem;
+}
+
+.property-fields {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.properties + .section {
+  border-top: 1px solid var(--vscode-panel-border);
+  margin-top: 20px;
+  padding-top: 16px;
+}
+
+.properties .kind {
+  display: none;
+}
+
+.properties dl {
+  display: grid;
+  align-items: center;
+  gap: 10px 16px;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+}
+
+.properties dl > div {
+  display: grid;
+  align-items: center;
+  gap: 16px;
+  grid-column: 1 / -1;
+  grid-template-columns: 9rem minmax(0, 1fr);
+}
+
+.properties dt {
+  color: var(--vscode-descriptionForeground);
+  font-size: inherit;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.properties dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.properties dd.reading {
+  font-family: var(--vscode-editor-font-family), monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.properties input,
+.properties select,
+.properties textarea {
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-contrastBorder, var(--vscode-panel-border)));
+  border-radius: 4px;
+  box-sizing: border-box;
+  color: var(--vscode-input-foreground);
+  font-family: var(--vscode-editor-font-family), monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  min-height: 28px;
+  padding: 4px 8px;
+  width: 100%;
+}
+
+.properties input[type="checkbox"] {
+  accent-color: var(--vscode-focusBorder);
+  min-height: 0;
+  margin: 4px 0;
+  width: auto;
+}
+
+.properties textarea { min-height: 84px; resize: vertical; }
+
+.properties input:disabled,
+.properties select:disabled,
+.properties textarea:disabled {
+  opacity: 0.6;
+}
+
+.properties input[readonly] {
+  background: transparent;
+  border-color: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: text;
+  padding-left: 0;
+  padding-right: 0;
+  opacity: 1;
+}
+
+.properties input:focus-visible,
+.properties select:focus-visible,
+.properties textarea:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+.properties .property-action button {
+  background: var(--vscode-button-background);
+  border: 1px solid var(--vscode-contrastBorder, transparent);
+  border-radius: 4px;
+  color: var(--vscode-button-foreground);
+  cursor: pointer;
+  font: inherit;
+  padding: 5px 12px;
+  max-width: 100%;
+}
+
+.properties .property-action button:not(:disabled):hover { background: var(--vscode-button-hoverBackground); }
+
+.properties .property-action button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.edge-constraints {
+  border-top: 1px solid var(--vscode-panel-border);
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 16px 0 0;
+}
+
+.constraint-section {
+  display: grid;
+  gap: 4px;
+}
+
+.constraint-section h2 {
+  font-size: inherit;
+  font-weight: 600;
+  margin: 0;
+}
+
+.constraint-empty {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.95em;
+  margin: 0;
+}
+
+.constraint-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.constraint-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.constraint-row code {
+  font-family: var(--vscode-editor-font-family), monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.properties .files {
+  border-top: 1px solid var(--vscode-panel-border);
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 12px 0 0;
+}
+
+.properties .files button {
+  background: transparent;
+  border: 0;
+  color: var(--vscode-textLink-foreground, var(--vscode-foreground));
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 4px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.properties .files button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  text-decoration: underline;
+}
+
+.properties > [role="status"] {
+  color: var(--vscode-descriptionForeground);
+  margin: 12px 0 0;
+}
+
+@media (max-width: 520px) {
+  .navigation-entry {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .navigation-entry > a { grid-column: 1; }
+  .navigation-entry > .delete-entry { grid-column: 2; grid-row: 1; margin-left: 0; }
+  .navigation-entry > .reason,
+  .navigation-entry > .references { grid-column: 1 / -1; }
+  .navigation-entry > .reason { padding-inline: 4px; }
+
+  .properties dl,
+  .properties dl > div {
+    gap: 8px 12px;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+  }
+
+  .status-list > div { gap: 12px; grid-template-columns: 7rem minmax(0, 1fr); }
+}
+
+@media (max-width: 360px) {
+  .properties dl,
+  .properties dl > div { grid-template-columns: minmax(0, 1fr); }
+  .properties dt { margin-top: 4px; }
+  .properties .property-action dt { display: none; }
+}
+
+@media (forced-colors: active) {
+  .delete-entry { color: LinkText; }
+  .properties input:focus-visible,
+  .properties select:focus-visible,
+  .properties textarea:focus-visible { outline-color: Highlight; }
+}

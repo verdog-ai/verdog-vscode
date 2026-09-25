@@ -1,0 +1,519 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Verdog project",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "package",
+    "generated_from",
+    "workflow",
+    "subroutine",
+    "externals",
+    "sources",
+    "editor",
+    "extensions"
+  ],
+  "properties": {
+    "schema_version": { "const": 32 },
+    "package": { "$ref": "#/$defs/package_key" },
+    "generated_from": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "workflow": { "$ref": "#/$defs/local_workflow_definition" },
+    "subroutine": { "$ref": "#/$defs/subroutine_definition" },
+    "externals": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/external" }
+    },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source_manifest" }
+    },
+    "editor": {
+      "type": "object",
+      "description": "Canvas positions, keyed by canonical lexical subroutine id.",
+      "required": ["layouts"],
+      "properties": {
+        "layouts": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/canonical_identifier" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "extensions": { "type": "object" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "package_key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+      "not": {
+        "pattern": "(?:^|\\.)(?:and|as|assert|async|await|break|case|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|match|nonlocal|not|or|pass|raise|return|try|type|while|with|yield)(?:\\.|$)"
+      }
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+      "not": {
+        "enum": [
+          "_", "and", "as", "assert", "async", "await", "break", "case",
+          "class", "continue", "def", "del", "elif", "else", "except", "finally",
+          "for", "from", "global", "if", "import", "in", "is", "lambda",
+          "match", "nonlocal", "not", "or", "pass", "raise", "return", "try",
+          "type", "while", "with", "yield"
+        ]
+      }
+    },
+    "edge_identifier": {
+      "type": "string",
+      "description": "A custom identifier, or source__target with an optional __2 parallel-edge suffix.",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:__(?:[2-9]|[1-9][0-9]+))?)?$",
+      "not": {
+        "pattern": "(?:^|__)(?:and|as|assert|async|await|break|case|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|match|nonlocal|not|or|pass|raise|return|try|type|while|with|yield)(?:__|$)"
+      }
+    },
+    "canonical_identifier": {
+      "type": "string",
+      "description": "A lexical definition path whose local identifiers are joined by __.",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:_[a-z0-9]+)*)*$",
+      "not": {
+        "pattern": "(?:^|__)(?:and|as|assert|async|await|break|case|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|match|nonlocal|not|or|pass|raise|return|try|type|while|with|yield)(?:__|$)"
+      }
+    },
+    "agent_profile_parameter": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "agent_invoker_options": {
+      "type": "object",
+      "required": ["model", "reasoning_effort", "extra_args"],
+      "properties": {
+        "model": {
+          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "reasoning_effort": {
+          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "extra_args": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "web_search": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "agent_profile": {
+      "type": "object",
+      "required": ["id", "name", "provider", "options"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "type": "string", "minLength": 1 },
+        "provider": { "enum": ["codex", "claude"] },
+        "options": { "$ref": "#/$defs/agent_invoker_options" }
+      },
+      "additionalProperties": false
+    },
+    "agent_session": {
+      "type": "object",
+      "required": ["id", "name", "persistent"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "type": "string", "minLength": 1 },
+        "persistent": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "agent_session_parameter": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "resource_arguments": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/identifier" },
+      "additionalProperties": { "$ref": "#/$defs/identifier" }
+    },
+    "source_manifest": {
+      "type": "object",
+      "required": ["path", "ownership", "size", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "ownership": { "enum": ["generated", "user"] },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "qualified_subroutine": {
+      "type": "string",
+      "description": "A direct dependency alias followed by that project's canonical subroutine path.",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*/[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:__[a-z][a-z0-9]*(?:_[a-z0-9]+)*)*$",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "(?:^|\\.)(?:and|as|assert|async|await|break|case|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|match|nonlocal|not|or|pass|raise|return|try|type|while|with|yield)(?:\\.|/)"
+          }
+        },
+        {
+          "not": {
+            "pattern": "(?:/|__)(?:and|as|assert|async|await|break|case|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|match|nonlocal|not|or|pass|raise|return|try|type|while|with|yield)(?:__|$)"
+          }
+        }
+      ]
+    },
+    "external": {
+      "type": "object",
+      "required": [
+        "alias",
+        "package",
+        "provider",
+        "repository_id",
+        "owner",
+        "name",
+        "commit"
+      ],
+      "properties": {
+        "alias": { "$ref": "#/$defs/package_key" },
+        "package": { "$ref": "#/$defs/package_key" },
+        "provider": { "const": "github" },
+        "repository_id": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "owner": { "type": "string" },
+        "name": { "type": "string" },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      },
+      "additionalProperties": false
+    },
+    "local_workflow_definition": {
+      "type": "object",
+      "required": [
+        "subroutine",
+        "profiles",
+        "sessions",
+        "profile_arguments",
+        "session_arguments"
+      ],
+      "properties": {
+        "subroutine": { "$ref": "#/$defs/canonical_identifier" },
+        "profiles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/agent_profile" }
+        },
+        "sessions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/agent_session" }
+        },
+        "profile_arguments": { "$ref": "#/$defs/resource_arguments" },
+        "session_arguments": { "$ref": "#/$defs/resource_arguments" }
+      },
+      "additionalProperties": false
+    },
+    "external_workflow_definition": {
+      "type": "object",
+      "required": ["id", "name", "external"],
+      "properties": {
+        "id": {
+          "description": "Identifier local to this workflow's declaring scope.",
+          "$ref": "#/$defs/identifier"
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "external": {
+          "type": "object",
+          "required": ["alias", "workflow"],
+          "properties": {
+            "alias": { "$ref": "#/$defs/package_key" },
+            "workflow": { "$ref": "#/$defs/canonical_identifier" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "workflow_definition": {
+      "oneOf": [
+        { "$ref": "#/$defs/local_workflow_definition" },
+        { "$ref": "#/$defs/external_workflow_definition" }
+      ]
+    },
+    "subroutine_definition": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "ports",
+        "features",
+        "profiles",
+        "profile_parameters",
+        "sessions",
+        "session_parameters",
+        "nodes",
+        "edges",
+        "workflows",
+        "subroutines"
+      ],
+      "properties": {
+        "id": {
+          "description": "Identifier local to this subroutine's declaring scope.",
+          "$ref": "#/$defs/identifier"
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "ports": {
+          "type": "object",
+          "required": ["enter", "exit", "failure"],
+          "properties": {
+            "enter": { "$ref": "#/$defs/identifier" },
+            "exit": { "$ref": "#/$defs/identifier" },
+            "failure": { "$ref": "#/$defs/identifier" }
+          },
+          "additionalProperties": false
+        },
+        "features": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/feature" }
+        },
+        "profiles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/agent_profile" }
+        },
+        "profile_parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/agent_profile_parameter" }
+        },
+        "sessions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/agent_session" }
+        },
+        "session_parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/agent_session_parameter" }
+        },
+        "nodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/node" }
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/edge" }
+        },
+        "workflows": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/workflow_definition" }
+        },
+        "subroutines": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/subroutine_definition" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "required": ["id", "name", "kind", "operation"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "agent",
+            "enter",
+            "exit",
+            "failure",
+            "feature",
+            "python",
+            "subroutine_call",
+            "workflow_call"
+          ]
+        },
+        "operation": {
+          "type": "object",
+          "properties": {
+            "profile": { "$ref": "#/$defs/identifier" },
+            "session": { "$ref": "#/$defs/identifier" },
+            "profile_arguments": { "$ref": "#/$defs/resource_arguments" },
+            "session_arguments": { "$ref": "#/$defs/resource_arguments" },
+            "target": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "agent" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "operation": {
+                "type": "object",
+                "required": ["profile", "session"],
+                "properties": {
+                  "profile": { "$ref": "#/$defs/identifier" },
+                  "session": { "$ref": "#/$defs/identifier" }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": { "enum": ["enter", "exit", "failure", "feature", "python"] }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "operation": { "type": "object", "maxProperties": 0 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "workflow_call" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "type": "object",
+                "required": ["target"],
+                "properties": { "target": { "$ref": "#/$defs/canonical_identifier" } },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "subroutine_call" } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "operation": {
+                "type": "object",
+                "required": ["target", "profile_arguments", "session_arguments"],
+                "properties": {
+                  "profile_arguments": { "$ref": "#/$defs/resource_arguments" },
+                  "session_arguments": { "$ref": "#/$defs/resource_arguments" },
+                  "target": {
+                    "oneOf": [
+                      { "$ref": "#/$defs/canonical_identifier" },
+                      { "$ref": "#/$defs/qualified_subroutine" }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id", "name", "source", "target", "conditions", "effects"],
+      "properties": {
+        "id": { "$ref": "#/$defs/edge_identifier" },
+        "name": { "type": "string", "minLength": 1 },
+        "source": { "$ref": "#/$defs/identifier" },
+        "target": { "$ref": "#/$defs/identifier" },
+        "conditions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/condition" }
+        },
+        "effects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/effect" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "feature": {
+      "type": "object",
+      "required": ["id", "label", "description", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "label": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["boolean", "integer", "float", "enum"] },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/identifier" }
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "const": "enum" } },
+            "required": ["kind"]
+          },
+          "then": { "properties": { "values": true }, "required": ["values"] },
+          "else": { "properties": { "values": false } }
+        }
+      ]
+    },
+    "condition": {
+      "type": "object",
+      "required": ["feature_id", "observation"],
+      "properties": {
+        "feature_id": { "$ref": "#/$defs/identifier" },
+        "observation": {
+          "enum": ["positive", "negative", "equal_zero", "greater_zero", "equal"]
+        },
+        "value": { "$ref": "#/$defs/identifier" }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "observation": { "const": "equal" } },
+            "required": ["observation"]
+          },
+          "then": { "properties": { "value": true }, "required": ["value"] },
+          "else": { "properties": { "value": false } }
+        }
+      ]
+    },
+    "effect": {
+      "type": "object",
+      "required": ["feature_id", "observation"],
+      "properties": {
+        "feature_id": { "$ref": "#/$defs/identifier" },
+        "observation": {
+          "enum": [
+            "increases",
+            "decreases",
+            "unchanged",
+            "unconstrained",
+            "positive",
+            "negative",
+            "equal"
+          ]
+        },
+        "value": { "$ref": "#/$defs/identifier" }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "observation": { "const": "equal" } },
+            "required": ["observation"]
+          },
+          "then": { "properties": { "value": true }, "required": ["value"] },
+          "else": { "properties": { "value": false } }
+        }
+      ]
+    }
+  }
+}

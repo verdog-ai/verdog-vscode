@@ -1,0 +1,233 @@
+/* Use the editor theme for everything around the graph. */
+:root {
+  color-scheme: light dark;
+}
+body {
+  margin: 0;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  line-height: 1.4;
+}
+body.vscode-light,
+body.vscode-high-contrast-light { color-scheme: light; }
+body.vscode-dark,
+body.vscode-high-contrast { color-scheme: dark; }
+button { box-sizing: border-box; }
+button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+.shell { display: flex; height: 100vh; flex-direction: column; }
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+.notice { padding: 16px; color: var(--vscode-descriptionForeground); }
+.flow { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.graph-surface { position: absolute; inset: 0; overflow: hidden; outline: none; }
+.graph-surface:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+.graph-canvas {
+  --graph-focus: var(--vscode-focusBorder);
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-image: radial-gradient(var(--vscode-editorIndentGuide-background1, var(--vscode-panel-border)) 0.75px, transparent 0.75px);
+  background-size: 18px 18px;
+  user-select: none;
+}
+.graph-canvas > svg { display: block; width: 100%; height: 100%; }
+.graph-canvas .graph > polygon { pointer-events: none; }
+.graph-canvas g.node,
+.graph-canvas g.edge { cursor: pointer; }
+/* DOT measures the full name size; only the secondary kind line is reduced. */
+.graph-canvas g.node > text:first-of-type { font-size: 12px; }
+.graph-canvas g.node:is(.is-focused, :focus-visible) > path,
+.graph-canvas g.node:is(.is-focused, :focus-visible) > polygon,
+.graph-canvas g.node:is(.is-focused, :focus-visible) > ellipse {
+  stroke: var(--graph-focus) !important;
+  stroke-width: 3 !important;
+}
+.graph-canvas g.edge > path { pointer-events: stroke; }
+.graph-canvas g.edge > path.graph-edge-hit {
+  stroke: transparent !important;
+  stroke-width: 12 !important;
+}
+.graph-canvas g.edge:is(.is-focused, :focus-visible) > path:not(.graph-edge-hit) {
+  stroke: var(--graph-focus) !important;
+  stroke-width: 2.6 !important;
+}
+.graph-canvas g.edge:is(.is-focused, :focus-visible) > polygon {
+  fill: var(--graph-focus) !important;
+  stroke: var(--graph-focus) !important;
+}
+.graph-canvas :is(g.node, g.edge):focus { outline: none; }
+.graph-edge-status { cursor: pointer; }
+.graph-edge-status > circle {
+  fill: var(--vscode-editor-background);
+  stroke: currentColor;
+  stroke-width: 1;
+}
+.graph-edge-status > text {
+  fill: currentColor;
+  font-family: var(--vscode-font-family);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.graph-canvas g.node.is-termination > :is(path, polygon, ellipse),
+.graph-canvas g.edge.is-termination > path:not(.graph-edge-hit) {
+  stroke-dasharray: 5 3;
+  stroke-width: 3;
+}
+.graph-canvas g.node.is-termination:not(.is-focused):not(:focus-visible) > :is(path, polygon, ellipse),
+.graph-canvas g.edge.is-termination:not(.is-focused):not(:focus-visible) > path:not(.graph-edge-hit) {
+  stroke: var(--vscode-editorWarning-foreground, var(--vscode-foreground)) !important;
+}
+.graph-canvas g.edge.is-termination:not(.is-focused):not(:focus-visible) > polygon {
+  fill: var(--vscode-editorWarning-foreground, var(--vscode-foreground)) !important;
+  stroke: var(--vscode-editorWarning-foreground, var(--vscode-foreground)) !important;
+}
+.graph-canvas g.node.graph-drop-valid > :is(path, polygon, ellipse) {
+  stroke: var(--vscode-testing-iconPassed, var(--vscode-charts-green)) !important;
+  stroke-width: 3 !important;
+}
+.graph-canvas g.node.graph-drop-invalid > :is(path, polygon, ellipse) {
+  stroke: var(--vscode-errorForeground) !important;
+  stroke-width: 3 !important;
+  stroke-dasharray: 4 3;
+}
+.graph-hint,
+.graph-gesture-status {
+  position: absolute;
+  z-index: 2;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
+  border-radius: 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  margin: 0;
+  padding: 8px 12px;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+}
+.graph-hint {
+  top: 12px;
+  left: 12px;
+  max-width: min(32rem, calc(100% - 48px));
+}
+.graph-gesture-status {
+  bottom: 12px;
+  left: 50%;
+  max-width: calc(100% - 120px);
+  transform: translateX(-50%);
+  width: max-content;
+}
+.graph-gesture-status:empty { border: 0; padding: 0; }
+.graph-canvas g.edge > polygon.graph-edge-target-handle { cursor: crosshair; pointer-events: all; }
+.graph-edge-source-handle {
+  fill: var(--vscode-editor-background);
+  stroke: var(--graph-focus);
+  stroke-width: 1.5;
+  cursor: crosshair;
+  opacity: 0;
+  pointer-events: all;
+}
+.graph-canvas g.edge:hover > .graph-edge-source-handle,
+.graph-canvas g.edge.is-focused > .graph-edge-source-handle { opacity: 1; }
+.graph-connect-handle {
+  fill: var(--vscode-editor-background);
+  stroke: var(--graph-focus);
+  stroke-width: 2;
+  cursor: crosshair;
+  pointer-events: all;
+}
+.graph-controls {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  z-index: 3;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow);
+}
+.graph-controls button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
+  color: var(--vscode-foreground);
+  background: var(--vscode-editorWidget-background);
+  font: inherit;
+  cursor: pointer;
+}
+.graph-controls button + button { border-top: 0; }
+.graph-controls button:first-child { border-radius: 4px 4px 0 0; }
+.graph-controls button:last-child { border-radius: 0 0 4px 4px; }
+.graph-controls button:hover { background: var(--vscode-toolbar-hoverBackground); }
+.tool-group {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 6px 6px;
+  border: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
+  border-radius: 4px;
+}
+.tool-group legend {
+  padding: 0 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.tools { display: flex; flex-wrap: wrap; gap: 4px; }
+.tools button {
+  min-height: 26px;
+  padding: 3px 8px;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  border: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border));
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tools button:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground); }
+.tools button:disabled { color: var(--vscode-disabledForeground); opacity: 0.7; cursor: default; }
+.readonly {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.tools button.open {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border-color: var(--vscode-contrastActiveBorder, var(--vscode-button-background));
+}
+.tools button.open:hover { background: var(--vscode-button-hoverBackground); }
+
+@media (max-width: 520px) {
+  .bar { gap: 8px; padding: 8px; }
+  .tool-group { flex: 1 1 100%; }
+}
+
+@media (forced-colors: active) {
+  button { border-color: ButtonText; }
+  button:focus-visible,
+  .graph-surface:focus-visible { outline-color: Highlight; }
+  .tools button.open { border-color: Highlight; }
+  .graph-canvas :is(g.node, g.edge):focus-visible { outline: 2px solid Highlight; outline-offset: 4px; }
+}
