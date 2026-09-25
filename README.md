@@ -7,9 +7,17 @@ The canvas sits beside your code, with results in the Runs view.
 
 ## Installation
 
-Requires VS Code **1.106 or newer** and the separately installed
-`verdog` CLI with **API 14** support. Installing
-[verdog-runtime](https://github.com/verdog-ai/verdog-runtime) alone does not install the CLI.
+Requires VS Code **1.106 or newer** and Python **3.12 or newer**. Install the
+`verdog` CLI from [verdog-runtime](https://pypi.org/project/verdog-runtime/)
+**0.1.1 or newer**, using [uv](https://docs.astral.sh/uv/getting-started/installation/):
+
+```sh
+uv tool install 'verdog-runtime>=0.1.1'
+verdog --help
+```
+
+The package contains the client CLI and local runtime. Compiler operations use the
+hosted backend; no backend installation is required.
 
 Install a release VSIX with **Extensions: Install from VSIX…**, then open a Verdog project
 folder containing `project.json` and run **Verdog: Show Canvas**. Use **Verdog: New Project**
@@ -152,8 +160,8 @@ Each takes optional arguments, so a keybinding — or a test — can skip the pr
 
 `npm test` checks the clone reader, project model, and verdict parser directly, with no
 sibling repositories required. `npm run typecheck` and `npm run build` check and build the
-extension. Run `npm run test:integration` with `../verdog` and `../verdog-runtime` checked
-out alongside this repository to check the run-history schema against the Python producers.
+extension. Run `npm run test:integration` with `../verdog-runtime` checked out alongside
+this repository to check the run-history schema against the Python producers.
 `VERDOG_COMMANDS=verdog.openCanvas,verdog.check` runs commands on activation, which is the
 only way a smoke test can invoke one.
 

@@ -113,9 +113,9 @@ test("the shared schema stays in parity with canonical Python definitions", asyn
 
 test("Python run-history producers use the canonical wire version", async () => {
   const [runs, entry, main] = await Promise.all([
-    readFile(repositoryFile("verdog/cli/src/verdog/runs.py"), "utf8"),
+    readFile(repositoryFile("verdog-runtime/verdog/runs.py"), "utf8"),
     readFile(repositoryFile("verdog-runtime/verdog_runtime/entry.py"), "utf8"),
-    readFile(repositoryFile("verdog/cli/src/verdog/main.py"), "utf8"),
+    readFile(repositoryFile("verdog-runtime/verdog/main.py"), "utf8"),
   ]);
   assertCanonicalProducerVersion(runs, "list_runs");
   assertCanonicalProducerVersion(runs, "list_checkpoints");

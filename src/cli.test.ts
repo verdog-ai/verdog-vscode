@@ -78,6 +78,7 @@ test("a command that cannot start reports a synthetic failure", async () => {
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /could not be started/);
   assert.match(result.combined, /verdog\.command/);
+  assert.match(result.combined, /uv tool install 'verdog-runtime>=0\.1\.1'/);
   assert.equal(lines.length, 2);
   assert.match(lines.join("\n"), /could not be started.*verdog\.command/s);
 });

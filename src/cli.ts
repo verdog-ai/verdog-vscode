@@ -40,8 +40,8 @@ export type Verdict = {
  * Run the CLI.
  *
  * `command` is the whole invocation, because `verdog` is usually on `PATH` but not always --
- * inside this repository it is `uv run verdog`, and a user may keep it in a virtual
- * environment. It is a parameter rather than a setting read in here so this file stays free
+ * a user may keep the runtime-provided CLI in a virtual environment. It is a parameter
+ * rather than a setting read in here so this file stays free
  * of `vscode` and can be tested by `node --test`.
  */
 export function verdog(
@@ -126,8 +126,8 @@ export function verdog(
     child.once("error", (error) => {
       const lines = [
         `${executable} could not be started: ${error.message}`,
-        "Set `verdog.command` to an argument array if the CLI is not on your PATH " +
-          '(for example `["uv", "run", "verdog"]` inside the Verdog repository).',
+        "Install the CLI with `uv tool install 'verdog-runtime>=0.1.1'`, or set " +
+          "`verdog.command` to an argument array containing its executable path.",
       ];
       for (const line of lines) {
         onLine?.(line);

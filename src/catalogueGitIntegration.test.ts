@@ -160,7 +160,7 @@ test("development opens an isolated host with the local Verdog extension", async
   const pathVariable = Object.keys(process.env).find((name) => name.toLowerCase() === "path")
     ?? "PATH";
   const executableDirectory = path.resolve(
-    context.extensionUri.fsPath, "..", "..", ".venv",
+    context.extensionUri.fsPath, "..", "verdog-runtime", ".venv",
     process.platform === "win32" ? "Scripts" : "bin",
   );
   const inherited = process.env[pathVariable];
