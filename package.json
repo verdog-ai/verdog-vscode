@@ -257,9 +257,15 @@
     "test": "node build-tests.mjs && node --test --test-concurrency=12 \"dist-test/**/*.test.mjs\"",
     "package": "vsce package --no-dependencies",
     "test:integration": "node build-tests.mjs --integration && node --test --test-concurrency=12 \"dist-test-integration/**/*.test.mjs\"",
-    "vscode:prepublish": "npm run typecheck && npm run build"
+    "vscode:prepublish": "npm run typecheck && npm run build",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write \"{src,model,webview,integration}/**/*.{ts,tsx}\" \"*.mjs\"",
+    "format:check": "prettier --check \"{src,model,webview,integration}/**/*.{ts,tsx}\" \"*.mjs\"",
+    "check": "npm run format:check && npm run lint && npm run typecheck",
+    "metrics": "eslint . --rule \"complexity: [warn, 20]\" --rule \"max-lines-per-function: [warn, {max: 100, skipBlankLines: true, skipComments: true}]\" --rule \"max-statements: [warn, 40]\""
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/d3-selection": "^3.0.11",
     "@types/markdown-it": "^14.2.0",
     "@types/node": "^20",
@@ -269,7 +275,12 @@
     "@vscode/vsce": "^3",
     "ajv": "^8.20.0",
     "esbuild": "^0.25.0",
-    "typescript": "^5.9.3"
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.9",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.1"
   },
   "dependencies": {
     "d3-graphviz": "5.6.0",
@@ -300,7 +311,14 @@
     "LICENSE",
     "LICENSE-EXCEPTION",
     "PRIVACY.md",
-    "SOURCE.md"
+    "SOURCE.md",
+    "CODE_QUALITY.md"
   ],
-  "icon": "media/icon.png"
+  "icon": "media/icon.png",
+  "prettier": {
+    "bracketSpacing": false,
+    "singleQuote": true,
+    "trailingComma": "all",
+    "arrowParens": "avoid"
+  }
 }

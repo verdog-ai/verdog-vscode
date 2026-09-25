@@ -1,52 +1,63 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
-/** Where a profile or session parameter ends up: the concrete resources bound to it. */
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
-import type { AgentProfileId, AgentSessionId, GraphId } from "./identifiers";
-import { isAgentProvider } from "./agents";
+/** @fileoverview Where a profile or session parameter ends up: the concrete resources bound to it. */
+
+import type {AgentProfileId, AgentSessionId, GraphId} from './identifiers';
+import {isAgentProvider} from './agents';
 import {
   definitionIndex,
   resolveCall,
   type AgentInvokerOptions,
   type AgentProvider,
   type SubroutineDefinition,
-} from "./project";
-import { entries, object } from "./reading";
+} from './project';
+import {entries, object} from './reading';
 
-export type ResourceKind = "profile" | "session";
+export type ResourceKind = 'profile' | 'session';
 
 /** The definition that declares a concrete profile or session. */
 export type BindingOwner =
-  | { kind: "workflow"; id: GraphId; declaredIn?: GraphId }
-  | { kind: "subroutine"; id: GraphId };
+  | {kind: 'workflow'; id: GraphId; declaredIn?: GraphId}
+  | {kind: 'subroutine'; id: GraphId};
 
-export type ResolvedBinding = {
+export interface ResolvedBinding {
   /** The concrete resource's identifier in its owner. */
   id: string;
   owner: BindingOwner;
   /** Persistence, for a session. */
   persistent?: boolean;
   /** Provider settings, for a profile. */
-  profile?: { options: AgentInvokerOptions; provider: AgentProvider };
+  profile?: {options: AgentInvokerOptions; provider: AgentProvider};
   resource: ResourceKind;
-};
+}
 
 const COLLECTIONS = {
-  profile: { arguments: "profile_arguments", locals: "profiles", parameters: "profile_parameters" },
-  session: { arguments: "session_arguments", locals: "sessions", parameters: "session_parameters" },
+  profile: {
+    arguments: 'profile_arguments',
+    locals: 'profiles',
+    parameters: 'profile_parameters',
+  },
+  session: {
+    arguments: 'session_arguments',
+    locals: 'sessions',
+    parameters: 'session_parameters',
+  },
 } as const;
 
-const concrete = (
+function concrete(
   resource: ResourceKind,
   owner: BindingOwner,
   raw: Record<string, unknown>,
-): ResolvedBinding => {
+): ResolvedBinding {
   const id = String(raw.id);
-  if (resource === "session") {
+  if (resource === 'session') {
     return {
       id,
       owner,
       resource,
-      ...(typeof raw.persistent === "boolean" ? { persistent: raw.persistent } : {}),
+      ...(typeof raw.persistent === 'boolean'
+        ? {persistent: raw.persistent}
+        : {}),
     };
   }
   const options = object(raw.options);
@@ -59,23 +70,29 @@ const concrete = (
           profile: {
             provider: raw.provider,
             options: {
-              model: typeof options.model === "string" ? options.model : null,
-              reasoning_effort: typeof options.reasoning_effort === "string"
-                ? options.reasoning_effort
-                : null,
+              model: typeof options.model === 'string' ? options.model : null,
+              reasoning_effort:
+                typeof options.reasoning_effort === 'string'
+                  ? options.reasoning_effort
+                  : null,
               extra_args: Array.isArray(options.extra_args)
                 ? options.extra_args.map(String)
                 : [],
-              ...(options.web_search === true ? { web_search: true } : {}),
+              ...(options.web_search === true ? {web_search: true} : {}),
             },
           },
         }
       : {}),
   };
-};
+}
 
-const declares = (graph: SubroutineDefinition | undefined, collection: string, id: string): boolean =>
-  entries(object(graph)[collection]).some((item) => item.id === id);
+function declares(
+  graph: SubroutineDefinition | undefined,
+  collection: string,
+  id: string,
+): boolean {
+  return entries(object(graph)[collection]).some(item => item.id === id);
+}
 
 /**
  * Every concrete resource a parameter resolves to through the call paths inside this project.
@@ -96,36 +113,76 @@ export function resolveParameter(
   const found: ResolvedBinding[] = [];
   const visited = new Set<string>();
   const add = (binding: ResolvedBinding) => {
-    if (!found.some((item) =>
-      item.owner.kind === binding.owner.kind && item.owner.id === binding.owner.id && item.id === binding.id
-    )) found.push(binding);
+    if (
+      !found.some(
+        item =>
+          item.owner.kind === binding.owner.kind &&
+          item.owner.id === binding.owner.id &&
+          item.id === binding.id,
+      )
+    ) {
+      found.push(binding);
+    }
   };
   const resolve = (target: GraphId, id: string) => {
-    if (!visited.add(`${target}\0${id}`)) return;
+    if (!visited.add(`${target}\0${id}`)) {
+      return;
+    }
     for (const definition of index.definitions.values()) {
-      if (definition.kind !== "workflow" || definition.workflow === undefined || definition.target !== target) continue;
+      if (
+        definition.kind !== 'workflow' ||
+        definition.workflow === undefined ||
+        definition.target !== target
+      ) {
+        continue;
+      }
       const bound = object(definition.workflow[names.arguments])[id];
-      if (typeof bound !== "string") continue;
-      const raw = entries(definition.workflow[names.locals]).find((item) => item.id === bound);
+      if (typeof bound !== 'string') {
+        continue;
+      }
+      const raw = entries(definition.workflow[names.locals]).find(
+        item => item.id === bound,
+      );
       if (raw !== undefined) {
-        add(concrete(resource, {
-          kind: "workflow",
-          id: definition.id,
-          ...(definition.declaredIn === undefined ? {} : { declaredIn: definition.declaredIn }),
-        }, raw));
+        add(
+          concrete(
+            resource,
+            {
+              kind: 'workflow',
+              id: definition.id,
+              ...(definition.declaredIn === undefined
+                ? {}
+                : {declaredIn: definition.declaredIn}),
+            },
+            raw,
+          ),
+        );
       }
     }
     for (const [callerId, caller] of index.subroutines) {
       for (const node of entries(caller.nodes)) {
-        if (node.kind !== "subroutine_call") continue;
+        if (node.kind !== 'subroutine_call') {
+          continue;
+        }
         const operation = object(node.operation);
-        const called = resolveCall(project, callerId, { kind: "subroutine_call", operation }, index);
-        if (called?.id !== target) continue;
+        const called = resolveCall(
+          project,
+          callerId,
+          {kind: 'subroutine_call', operation},
+          index,
+        );
+        if (called?.id !== target) {
+          continue;
+        }
         const bound = object(operation[names.arguments])[id];
-        if (typeof bound !== "string") continue;
-        const local = entries(caller[names.locals]).find((item) => item.id === bound);
+        if (typeof bound !== 'string') {
+          continue;
+        }
+        const local = entries(caller[names.locals]).find(
+          item => item.id === bound,
+        );
         if (local !== undefined) {
-          add(concrete(resource, { kind: "subroutine", id: callerId }, local));
+          add(concrete(resource, {kind: 'subroutine', id: callerId}, local));
         } else if (declares(caller, names.parameters, bound)) {
           resolve(callerId, bound);
         }
@@ -139,18 +196,20 @@ export function resolveParameter(
 /** One line a person can read: what the bound resource is configured as. */
 export function bindingSummary(binding: ResolvedBinding): string {
   const where = `${binding.owner.kind} ${binding.owner.id} → ${binding.id}`;
-  if (binding.resource === "session") {
+  if (binding.resource === 'session') {
     return binding.persistent === undefined
       ? where
-      : `${where} (${binding.persistent ? "persistent" : "fresh"})`;
+      : `${where} (${binding.persistent ? 'persistent' : 'fresh'})`;
   }
-  if (binding.profile === undefined) return where;
-  const { provider, options } = binding.profile;
+  if (binding.profile === undefined) {
+    return where;
+  }
+  const {provider, options} = binding.profile;
   const settings = [
     provider,
     options.model ?? undefined,
     options.reasoning_effort ?? undefined,
-    options.web_search === true ? "web search" : undefined,
+    options.web_search === true ? 'web search' : undefined,
   ].filter((item): item is string => item !== undefined);
-  return `${where} (${settings.join(" · ")})`;
+  return `${where} (${settings.join(' · ')})`;
 }

@@ -57,12 +57,14 @@ Use Node.js 22 or newer (`nvm use` if available):
 
 ```sh
 npm ci
+npm run check
 npm test
 npm run package
 code --install-extension verdog-vscode-0.0.3.vsix
 ```
 
-Packaging type-checks and builds the extension first. To launch a development window:
+The [quality guide](CODE_QUALITY.md) records the style rules, checks, and measured
+refactors. Packaging type-checks and builds the extension first. To launch a development window:
 
 ```sh
 npm run build

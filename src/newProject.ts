@@ -1,6 +1,7 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
+
 /**
- * Starting a project without leaving the editor.
+ * @fileoverview Starting a project without leaving the editor.
  *
  * The canvas is the pitch, so making a project must not require a terminal. What this does
  * *not* do is build the graph itself: it runs `verdog init`, which is the one place the blank
@@ -11,15 +12,15 @@
  * reject *before* anything is written, run the verb, and open what it made.
  */
 
-import * as path from "node:path";
+import * as path from 'node:path';
 
-import * as vscode from "vscode";
+import * as vscode from 'vscode';
 
-import { backendCommand as verdog } from "./verdogCommand";
-import { packageFrom, packageProblem } from "../model/names";
+import {backendCommand as verdog} from './verdogCommand';
+import {packageFrom, packageProblem} from '../model/names';
 
 /** Set before the window reloads, so the canvas is showing when it comes back. */
-export const REVEAL_CANVAS = "verdog.revealCanvas";
+export const REVEAL_CANVAS = 'verdog.revealCanvas';
 
 export async function newProject(
   context: vscode.ExtensionContext,
@@ -30,16 +31,18 @@ export async function newProject(
     canSelectFolders: true,
     canSelectMany: false,
     defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri,
-    openLabel: "Create the project here",
-    title: "Where should the project live?",
+    openLabel: 'Create the project here',
+    title: 'Where should the project live?',
   });
   const folder = folders?.[0]?.fsPath;
-  if (folder === undefined) return;
+  if (folder === undefined) {
+    return;
+  }
 
   // Refused here rather than by the CLI: `verdog init` refuses it too, but spawning a process
   // to learn that a folder is taken is a worse way to say so than saying it.
   const existing = await vscode.workspace.fs
-    .stat(vscode.Uri.file(path.join(folder, "project.json")))
+    .stat(vscode.Uri.file(path.join(folder, 'project.json')))
     .then(
       () => true,
       () => false,
@@ -52,28 +55,32 @@ export async function newProject(
   }
 
   const name = await vscode.window.showInputBox({
-    prompt: "What does this workflow do?",
-    title: "New Verdog project",
+    prompt: 'What does this workflow do?',
+    title: 'New Verdog project',
     value: path.basename(folder),
   });
-  if (name === undefined || !name.trim()) return;
+  if (name === undefined || !name.trim()) {
+    return;
+  }
 
   const suggested = packageFrom(name);
   const packageName = await vscode.window.showInputBox({
     prompt:
-      "The Python package every module in this project is rooted at. " +
+      'The Python package every module in this project is rooted at. ' +
       "Use `space.name`, so two authors' projects of the same name can sit side by side. " +
       "Generation sends the new project's files to your configured Verdog service.",
     placeHolder: `space.${suggested}`,
     title: `New project "${name.trim()}"`,
     validateInput: packageProblem,
   });
-  if (packageName === undefined) return;
+  if (packageName === undefined) {
+    return;
+  }
 
   const result = await verdog(
     folder,
-    ["init", name.trim(), "--package", packageName],
-    { command },
+    ['init', name.trim(), '--package', packageName],
+    {command},
   );
   if (result.code !== 0) {
     void vscode.window.showErrorMessage(
@@ -90,8 +97,8 @@ export async function newProject(
   // drawn graph instead of an instruction to go and find the side bar.
   await context.globalState.update(REVEAL_CANVAS, true);
   await vscode.commands.executeCommand(
-    "vscode.openFolder",
+    'vscode.openFolder',
     vscode.Uri.file(folder),
-    { forceReuseWindow: true },
+    {forceReuseWindow: true},
   );
 }

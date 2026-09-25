@@ -1,35 +1,38 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
-import type { ReactNode } from "react";
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
-import type { Entity } from "../model/editing";
+import type {ReactNode} from 'react';
 
-export type EntityTreeItem = {
+import type {Entity} from '../model/editing';
+
+export interface EntityTreeItem {
   entity: Entity;
   id: string;
   scope: readonly string[];
-};
+}
 
-export type EntityTreeData<Item extends EntityTreeItem> = {
+export interface EntityTreeData<Item extends EntityTreeItem> {
   collections: Map<Entity, Item[]>;
   scopes: Map<string, EntityTreeData<Item>>;
-};
+}
 
 const COLLECTION_LABELS: Record<Entity, string> = {
-  edges: "Edges",
-  features: "Features",
-  nodes: "Nodes",
-  profile_parameters: "Profile parameters",
-  profiles: "Profiles",
-  session_parameters: "Session parameters",
-  sessions: "Sessions",
-  subroutines: "Subroutines",
-  workflows: "Workflows",
+  edges: 'Edges',
+  features: 'Features',
+  nodes: 'Nodes',
+  profile_parameters: 'Profile parameters',
+  profiles: 'Profiles',
+  session_parameters: 'Session parameters',
+  sessions: 'Sessions',
+  subroutines: 'Subroutines',
+  workflows: 'Workflows',
 };
 
-const emptyTree = <Item extends EntityTreeItem>(): EntityTreeData<Item> => ({
-  collections: new Map(),
-  scopes: new Map(),
-});
+function emptyTree<Item extends EntityTreeItem>(): EntityTreeData<Item> {
+  return {
+    collections: new Map(),
+    scopes: new Map(),
+  };
+}
 
 export function entityTree<Item extends EntityTreeItem>(
   items: readonly Item[],
@@ -61,13 +64,24 @@ function TreeContents<Item extends EntityTreeItem>({
   renderItem: (item: Item) => ReactNode;
   tree: EntityTreeData<Item>;
 }) {
-  const scopes = [...tree.scopes].sort(([left], [right]) => left.localeCompare(right));
-  const collections = [...tree.collections].sort(([left], [right]) => left.localeCompare(right));
+  const scopes = [...tree.scopes].sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  const collections = [...tree.collections].sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
   return (
     <ul className="tree">
       {collections.map(([collection, items]) => (
         <li key={collection}>
-          <details data-disclosure={JSON.stringify(["collection", ...ancestry, collection])} open>
+          <details
+            data-disclosure={JSON.stringify([
+              'collection',
+              ...ancestry,
+              collection,
+            ])}
+            open
+          >
             <summary>
               <span>{COLLECTION_LABELS[collection]}</span>
               <span className="count">{items.length}</span>
@@ -82,9 +96,18 @@ function TreeContents<Item extends EntityTreeItem>({
       ))}
       {scopes.map(([scope, child]) => (
         <li key={scope}>
-          <details data-disclosure={JSON.stringify(["scope", ...ancestry, scope])} open>
-            <summary><code>{scope}</code></summary>
-            <TreeContents ancestry={[...ancestry, scope]} renderItem={renderItem} tree={child} />
+          <details
+            data-disclosure={JSON.stringify(['scope', ...ancestry, scope])}
+            open
+          >
+            <summary>
+              <code>{scope}</code>
+            </summary>
+            <TreeContents
+              ancestry={[...ancestry, scope]}
+              renderItem={renderItem}
+              tree={child}
+            />
           </details>
         </li>
       ))}

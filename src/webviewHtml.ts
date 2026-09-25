@@ -1,16 +1,21 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
-import { randomBytes } from "node:crypto";
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
-import * as vscode from "vscode";
+import {randomBytes} from 'node:crypto';
+
+import * as vscode from 'vscode';
 
 export function webviewHtml(
   webview: vscode.Webview,
   extension: vscode.Uri,
-  bundle = "webview",
+  bundle = 'webview',
 ): string {
-  const script = webview.asWebviewUri(vscode.Uri.joinPath(extension, "dist", `${bundle}.js`));
-  const style = webview.asWebviewUri(vscode.Uri.joinPath(extension, "dist", `${bundle}.css`));
-  const nonce = randomBytes(16).toString("base64");
+  const script = webview.asWebviewUri(
+    vscode.Uri.joinPath(extension, 'dist', `${bundle}.js`),
+  );
+  const style = webview.asWebviewUri(
+    vscode.Uri.joinPath(extension, 'dist', `${bundle}.css`),
+  );
+  const nonce = randomBytes(16).toString('base64');
   return `<!DOCTYPE html>
 <html lang="en">
   <head>

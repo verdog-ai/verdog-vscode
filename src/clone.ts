@@ -1,6 +1,7 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
+
 /**
- * The clone as the source of truth.
+ * @fileoverview The clone as the source of truth.
  *
  * The canvas receives one snapshot from the extension host. This builds it from the working
  * copy: the graph and the layout come straight out of `project.json`, and
@@ -11,17 +12,17 @@
  * until one has run, which the canvas renders as "unchecked" rather than "clean".
  */
 
-import { promises as fs } from "node:fs";
-import * as path from "node:path";
+import {promises as fs} from 'node:fs';
+import * as path from 'node:path';
 
-import { graphHash } from "./graph";
-import { array, entries, object, text } from "../model/reading";
+import {graphHash} from './graph';
+import {array, entries, object, text} from '../model/reading';
 import {
   moduleDocumentPaths,
   visitDocumentPaths,
   type DocumentRefs,
-} from "../model/documents";
-import { packageDirectory, packageProblem } from "../model/names";
+} from '../model/documents';
+import {packageDirectory, packageProblem} from '../model/names';
 import {
   definitionIndex,
   definitionKey,
@@ -29,46 +30,57 @@ import {
   definitionPath,
   SCHEMA_VERSION,
   type CanonicalProject,
-} from "../model/project";
+} from '../model/project';
 import {
   ownerRoot,
   qualifiedKey,
   subroutineAddress,
   type ProjectSnapshot,
-} from "../model/snapshot";
-import { directProjectPath } from "./projectPath";
+} from '../model/snapshot';
+import {directProjectPath} from './projectPath';
 
 /** Where a pinned dependency is checked out. The CLI's `EXTERNAL_ROOT`, mirrored. */
-const EXTERNAL_ROOT = "external";
+const EXTERNAL_ROOT = 'external';
 
 /** Whether a file belongs to the project's protected projection, or is outside this project. */
 export function projectFileReadonly(
   root: string,
   file: string,
-  snapshot: { pinned: Readonly<Record<string, unknown>>; project: unknown },
+  snapshot: {pinned: Readonly<Record<string, unknown>>; project: unknown},
 ): boolean | undefined {
   const relativeTo = (owner: string): string | undefined => {
     const relative = path.relative(owner, file);
     const parts = relative.split(path.sep);
-    return path.isAbsolute(relative) || parts[0] === ".." ? undefined : parts.join("/");
+    return path.isAbsolute(relative) || parts[0] === '..'
+      ? undefined
+      : parts.join('/');
   };
-  if (relativeTo(root) === undefined) return undefined;
+  if (relativeTo(root) === undefined) {
+    return undefined;
+  }
 
-  const owners: [string, unknown][] = [
+  const owners: Array<[string, unknown]> = [
     [root, snapshot.project],
-    ...Object.entries(snapshot.pinned).map(([owner, project]) => [
-      path.join(root, ...ownerRoot(owner).split("/")),
-      project,
-    ] as [string, unknown]),
+    ...Object.entries(snapshot.pinned).map(
+      ([owner, project]) =>
+        [path.join(root, ...ownerRoot(owner).split('/')), project] as [
+          string,
+          unknown,
+        ],
+    ),
   ];
   owners.sort(([left], [right]) => right.length - left.length);
   const found = owners
-    .map(([owner, project]) => ({ project, sourcePath: relativeTo(owner) }))
-    .find(({ sourcePath }) => sourcePath !== undefined);
-  if (found === undefined) return false;
-  return array(object(found.project).sources).some((entry) => {
+    .map(([owner, project]) => ({project, sourcePath: relativeTo(owner)}))
+    .find(({sourcePath}) => sourcePath !== undefined);
+  if (found === undefined) {
+    return false;
+  }
+  return array(object(found.project).sources).some(entry => {
     const source = object(entry);
-    return text(source.path) === found.sourcePath && source.ownership === "generated";
+    return (
+      text(source.path) === found.sourcePath && source.ownership === 'generated'
+    );
   });
 }
 
@@ -89,15 +101,17 @@ export function subroutineFile(
   root: string,
   subroutineId: string,
   pinned: Readonly<Record<string, unknown>>,
-): { root: string; subroutine: string } {
-  const { ownerPath, subroutine } = subroutineAddress(pinned, subroutineId);
-  if (ownerPath === undefined) return { root, subroutine };
+): {root: string; subroutine: string} {
+  const {ownerPath, subroutine} = subroutineAddress(pinned, subroutineId);
+  if (ownerPath === undefined) {
+    return {root, subroutine};
+  }
   return {
     root: path.join(
       root,
       ...ownerPath
-        .split("/")
-        .flatMap((alias) => [EXTERNAL_ROOT, packageDirectory(alias)]),
+        .split('/')
+        .flatMap(alias => [EXTERNAL_ROOT, packageDirectory(alias)]),
     ),
     subroutine,
   };
@@ -108,17 +122,21 @@ function refs(
   paths: DocumentRefs,
 ): DocumentRefs | undefined {
   const found: Partial<DocumentRefs> = {};
-  for (const [key, candidate] of Object.entries(paths) as [keyof DocumentRefs, string][]) {
+  for (const [key, candidate] of Object.entries(paths) as Array<
+    [keyof DocumentRefs, string]
+  >) {
     if (present.has(candidate)) {
       (found as Record<string, string>)[key] = candidate;
     }
   }
-  if (!found.declaration) return undefined;
+  if (!found.declaration) {
+    return undefined;
+  }
   return found as DocumentRefs;
 }
 
 export async function readClone(root: string): Promise<ProjectSnapshot> {
-  const raw = await fs.readFile(path.join(root, "project.json"), "utf8");
+  const raw = await fs.readFile(path.join(root, 'project.json'), 'utf8');
   const decoded = object(JSON.parse(raw) as unknown);
   // An old clone read by a new extension -- or the reverse -- is a real state rather than a
   // bug, and it deserves a sentence instead of a canvas quietly drawing the wrong thing. This
@@ -128,14 +146,14 @@ export async function readClone(root: string): Promise<ProjectSnapshot> {
   if (version !== SCHEMA_VERSION) {
     throw new Error(
       `this project is schema v${String(version)} and this extension draws v${SCHEMA_VERSION}. ` +
-        (typeof version === "number" && version < SCHEMA_VERSION
+        (typeof version === 'number' && version < SCHEMA_VERSION
           ? `Schema v${String(version)} is unsupported; recreate it as schema v${SCHEMA_VERSION}.`
-          : "Update the Verdog extension."),
+          : 'Update the Verdog extension.'),
     );
   }
   const project = decoded as CanonicalProject;
 
-  const entityDocuments: ProjectSnapshot["entity_documents"] = {
+  const entityDocuments: ProjectSnapshot['entity_documents'] = {
     edges: {},
     features: {},
     nodes: {},
@@ -167,83 +185,120 @@ export async function readClone(root: string): Promise<ProjectSnapshot> {
     // manifest does not mention them at all -- so the set is built from that and prefixed.
     const listed = new Set(
       array(project.sources)
-        .map((entry) => text(object(entry).path))
+        .map(entry => text(object(entry).path))
         .filter(Boolean)
-        .map((relative) => `${prefix}${relative}`),
+        .map(relative => `${prefix}${relative}`),
     );
     for (const subroutine of subroutinesIn(project)) {
       const subroutineId = subroutine.id;
-      const definition = definitionPath(project, "subroutine", subroutineId);
-      if (definition === undefined) continue;
+      const definition = definitionPath(project, 'subroutine', subroutineId);
+      if (definition === undefined) {
+        continue;
+      }
       const at = key(subroutineId);
-      const base = `${prefix}src/${packageDirectory(owner)}/${definition.join("/")}`;
+      const base = `${prefix}src/${packageDirectory(owner)}/${definition.join('/')}`;
       entityDocuments.nodes[at] = {};
       for (const raw of entries(subroutine.nodes)) {
         const id = text(raw.id);
         const found = refs(
           listed,
-          moduleDocumentPaths(`${base}/nodes/${id}`, raw.kind !== "feature"),
+          moduleDocumentPaths(`${base}/nodes/${id}`, raw.kind !== 'feature'),
         );
-        if (id && found) entityDocuments.nodes[at][id] = found;
+        if (id && found) {
+          entityDocuments.nodes[at][id] = found;
+        }
       }
       entityDocuments.features[at] = {};
       for (const raw of entries(subroutine.features)) {
         const id = text(raw.id);
-        const found = refs(listed, moduleDocumentPaths(`${base}/features/${id}`, false));
-        if (id && found !== undefined) entityDocuments.features[at][id] = found;
+        const found = refs(
+          listed,
+          moduleDocumentPaths(`${base}/features/${id}`, false),
+        );
+        if (id && found !== undefined) {
+          entityDocuments.features[at][id] = found;
+        }
       }
       const resources = (
-        collection: "profile_parameters" | "profiles" | "session_parameters" | "sessions",
-        directory: "profiles" | "sessions",
+        collection:
+          'profile_parameters' | 'profiles' | 'session_parameters' | 'sessions',
+        directory: 'profiles' | 'sessions',
       ): void => {
         entityDocuments[collection][at] = {};
         for (const raw of entries(subroutine[collection])) {
           const id = text(raw.id);
-          const found = refs(listed, moduleDocumentPaths(`${base}/${directory}/${id}`, false));
-          if (id && found !== undefined) entityDocuments[collection][at][id] = found;
+          const found = refs(
+            listed,
+            moduleDocumentPaths(`${base}/${directory}/${id}`, false),
+          );
+          if (id && found !== undefined) {
+            entityDocuments[collection][at][id] = found;
+          }
         }
       };
-      resources("profile_parameters", "profiles");
-      resources("profiles", "profiles");
-      resources("session_parameters", "sessions");
-      resources("sessions", "sessions");
+      resources('profile_parameters', 'profiles');
+      resources('profiles', 'profiles');
+      resources('session_parameters', 'sessions');
+      resources('sessions', 'sessions');
       entityDocuments.edges[at] = {};
       for (const raw of entries(subroutine.edges)) {
         const id = text(raw.id);
-        if (!id) continue;
-        const declaration = refs(listed, moduleDocumentPaths(`${base}/edges/${id}`, false));
-        if (declaration === undefined) continue;
-        const visit = refs(listed, visitDocumentPaths(`${base}/nodes/${text(raw.target)}`, { id }));
+        if (!id) {
+          continue;
+        }
+        const declaration = refs(
+          listed,
+          moduleDocumentPaths(`${base}/edges/${id}`, false),
+        );
+        if (declaration === undefined) {
+          continue;
+        }
+        const visit = refs(
+          listed,
+          visitDocumentPaths(`${base}/nodes/${text(raw.target)}`, {id}),
+        );
         entityDocuments.edges[at][id] = {
           ...declaration,
-          ...(visit === undefined ? {} : { visit }),
+          ...(visit === undefined ? {} : {visit}),
         };
       }
     }
     for (const definition of definitionIndex(project).definitions.values()) {
       if (
-        definition.kind !== "workflow" ||
+        definition.kind !== 'workflow' ||
         definition.workflow === undefined ||
         definition.path === undefined
-      ) continue;
-      const at = key(definitionKey("workflow", definition.id));
-      const base = `${prefix}src/${packageDirectory(owner)}/${definition.path.join("/")}`;
+      ) {
+        continue;
+      }
+      const at = key(definitionKey('workflow', definition.id));
+      const base = `${prefix}src/${packageDirectory(owner)}/${definition.path.join('/')}`;
       entityDocuments.profiles[at] = {};
       for (const profile of entries(definition.workflow.profiles)) {
         const id = text(profile.id);
-        const found = refs(listed, moduleDocumentPaths(`${base}/profiles/${id}`, false));
-        if (id && found !== undefined) entityDocuments.profiles[at][id] = found;
+        const found = refs(
+          listed,
+          moduleDocumentPaths(`${base}/profiles/${id}`, false),
+        );
+        if (id && found !== undefined) {
+          entityDocuments.profiles[at][id] = found;
+        }
       }
       entityDocuments.sessions[at] = {};
       for (const session of entries(definition.workflow.sessions)) {
         const id = text(session.id);
-        const found = refs(listed, moduleDocumentPaths(`${base}/sessions/${id}`, false));
-        if (id && found !== undefined) entityDocuments.sessions[at][id] = found;
+        const found = refs(
+          listed,
+          moduleDocumentPaths(`${base}/sessions/${id}`, false),
+        );
+        if (id && found !== undefined) {
+          entityDocuments.sessions[at][id] = found;
+        }
       }
     }
   };
 
-  derive(project, "", (subroutineId) => subroutineId);
+  derive(project, '', subroutineId => subroutineId);
 
   /**
    * The subroutines of pinned dependencies at every depth, so a call node standing for one can be
@@ -260,20 +315,29 @@ export async function readClone(root: string): Promise<ProjectSnapshot> {
   const pinned: Record<string, CanonicalProject> = {};
   const readPins = async (
     owner: CanonicalProject,
-    ownerPrefix = "",
+    ownerPrefix = '',
     ownerPath?: string,
   ): Promise<void> => {
     for (const entry of array(owner.externals)) {
       const alias = text(object(entry).alias);
-      if (!alias || packageProblem(alias)) continue;
+      if (!alias || packageProblem(alias)) {
+        continue;
+      }
       const aliasPath = qualifiedKey(ownerPath, alias);
       const prefix = `${ownerPrefix}${EXTERNAL_ROOT}/${packageDirectory(alias)}/`;
       try {
-        const manifestPath = await directProjectPath(root, `${prefix}project.json`);
-        const manifest = await fs.readFile(manifestPath, "utf8");
-        const project = object(JSON.parse(manifest) as unknown) as CanonicalProject;
+        const manifestPath = await directProjectPath(
+          root,
+          `${prefix}project.json`,
+        );
+        const manifest = await fs.readFile(manifestPath, 'utf8');
+        const project = object(
+          JSON.parse(manifest) as unknown,
+        ) as CanonicalProject;
         pinned[aliasPath] = project;
-        derive(project, prefix, (subroutineId) => qualifiedKey(aliasPath, subroutineId));
+        derive(project, prefix, subroutineId =>
+          qualifiedKey(aliasPath, subroutineId),
+        );
         await readPins(project, prefix, aliasPath);
       } catch {
         continue;
@@ -281,7 +345,7 @@ export async function readClone(root: string): Promise<ProjectSnapshot> {
     }
   };
   await readPins(project);
-  const { rootSubroutine, rootWorkflow } = definitionIndex(project);
+  const {rootSubroutine, rootWorkflow} = definitionIndex(project);
 
   return {
     // Locally you can do everything: there is no tenant to be a viewer of. The service
@@ -291,9 +355,10 @@ export async function readClone(root: string): Promise<ProjectSnapshot> {
     editable: true,
     entity_documents: entityDocuments,
     graph_hash: graphHash(project),
-    initial_scope: rootWorkflow === undefined
-      ? rootSubroutine ?? ""
-      : definitionKey("workflow", rootWorkflow),
+    initial_scope:
+      rootWorkflow === undefined
+        ? (rootSubroutine ?? '')
+        : definitionKey('workflow', rootWorkflow),
     pinned,
     project,
   };

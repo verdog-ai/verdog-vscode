@@ -1,32 +1,33 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
-/** Versioned, platform-neutral contracts for local run history. */
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
-import Ajv from "ajv";
+/** @fileoverview Versioned, platform-neutral contracts for local run history. */
 
-import runHistorySchema from "../schemas/run-history.schema.json";
+import Ajv from 'ajv';
+
+import runHistorySchema from '../schemas/run-history.schema.json';
 
 /** The JSON Schema is the runtime authority for the editor/CLI wire contract. */
-export const RUN_HISTORY_SCHEMA_VERSION: 1 =
-  runHistorySchema.definitions.schemaVersion.const as 1;
+export const RUN_HISTORY_SCHEMA_VERSION: 1 = runHistorySchema.definitions
+  .schemaVersion.const as 1;
 
-export type RunStatus = "running" | "interrupted" | "failed" | "succeeded";
-export type CheckpointPolicy = "auto" | "required" | "off";
-export type SessionPolicy = "branch" | "fresh";
+export type RunStatus = 'running' | 'interrupted' | 'failed' | 'succeeded';
+export type CheckpointPolicy = 'auto' | 'required' | 'off';
+export type SessionPolicy = 'branch' | 'fresh';
 
-export type WorkflowIdentity = {
+export interface WorkflowIdentity {
   id: string;
   definition_id: string;
   module: string;
-};
+}
 
-export type RunParent = {
+export interface RunParent {
   run_id: string;
-  operation: "restart" | "fork";
+  operation: 'restart' | 'fork';
   checkpoint: number | null;
-  arguments: "reused" | "overridden" | "checkpoint";
-};
+  arguments: 'reused' | 'overridden' | 'checkpoint';
+}
 
-export type RunSummary = {
+export interface RunSummary {
   id: string;
   directory_name: string;
   workflow: WorkflowIdentity;
@@ -49,7 +50,7 @@ export type RunSummary = {
   };
   sessions: {
     persistent: number;
-    model: "copy-on-write" | "legacy";
+    model: 'copy-on-write' | 'legacy';
     branch_available: boolean;
     issues: Array<{
       address: string;
@@ -58,17 +59,17 @@ export type RunSummary = {
       message: string;
     }>;
   };
-};
+}
 
-export type BoundarySummary = {
+export interface BoundarySummary {
   project_path: string;
   graph: string;
   node: string;
   visit: number;
   call_path: string;
-};
+}
 
-export type CheckpointSummary = {
+export interface CheckpointSummary {
   sequence: number;
   created_at: string;
   kind: string;
@@ -79,55 +80,56 @@ export type CheckpointSummary = {
   fork_with_fresh_available: boolean;
   unavailable_code: string | null;
   unavailable_reason: string | null;
-};
+}
 
-export type RunsEnvelope = {
+export interface RunsEnvelope {
   schema_version: typeof RUN_HISTORY_SCHEMA_VERSION;
-  operation: "runs";
+  operation: 'runs';
   project: string;
   runs: RunSummary[];
-};
+}
 
-export type CheckpointsEnvelope = {
+export interface CheckpointsEnvelope {
   schema_version: typeof RUN_HISTORY_SCHEMA_VERSION;
-  operation: "checkpoints";
+  operation: 'checkpoints';
   run: RunSummary;
   checkpoints: CheckpointSummary[];
-};
+}
 
-export type OperationName = "resume" | "restart" | "fork";
+export type OperationName = 'resume' | 'restart' | 'fork';
 
-export type OperationEnvelope = {
+export interface OperationEnvelope {
   schema_version: typeof RUN_HISTORY_SCHEMA_VERSION;
   operation: OperationName;
-  status: "succeeded" | "failed" | "interrupted";
+  status: 'succeeded' | 'failed' | 'interrupted';
   source_run_id: string;
   source_checkpoint: number | null;
-  sessions: "restore" | SessionPolicy;
-  arguments: "checkpoint" | "reused" | "overridden";
+  sessions: 'restore' | SessionPolicy;
+  arguments: 'checkpoint' | 'reused' | 'overridden';
   run: RunSummary;
   error?: OperationError;
-};
+}
 
-export type OperationError = { code: string; message: string; details?: unknown };
+export interface OperationError {
+  code: string;
+  message: string;
+  details?: unknown;
+}
 
-export type ErrorEnvelope = {
+export interface ErrorEnvelope {
   schema_version?: typeof RUN_HISTORY_SCHEMA_VERSION;
   operation?: string;
-  status: "error";
+  status: 'error';
   error: OperationError;
-};
+}
 
-type OperationWireEnvelope = Omit<OperationEnvelope, "error"> & {
+type OperationWireEnvelope = Omit<OperationEnvelope, 'error'> & {
   error?: OperationError | null;
 };
 type RunHistoryEnvelope =
-  | RunsEnvelope
-  | CheckpointsEnvelope
-  | OperationWireEnvelope
-  | ErrorEnvelope;
+  RunsEnvelope | CheckpointsEnvelope | OperationWireEnvelope | ErrorEnvelope;
 
-const validateEnvelope = new Ajv({ strict: true }).compile<RunHistoryEnvelope>(
+const validateEnvelope = new Ajv({strict: true}).compile<RunHistoryEnvelope>(
   runHistorySchema,
 );
 
@@ -140,61 +142,78 @@ function validated(stdout: string): RunHistoryEnvelope | undefined {
   }
 }
 
-const unique = <T>(values: readonly T[]): boolean =>
-  new Set(values).size === values.length;
+function unique<T>(values: readonly T[]): boolean {
+  return new Set(values).size === values.length;
+}
 
 /** Invalid or unsupported CLI output is not partially accepted. */
 export function parseRunsEnvelope(stdout: string): RunsEnvelope | undefined {
   const value = validated(stdout);
-  if (value?.operation !== "runs" || "status" in value) return undefined;
-  return unique(value.runs.map(({ id }) => id)) ? value : undefined;
+  if (value?.operation !== 'runs' || 'status' in value) {
+    return undefined;
+  }
+  return unique(value.runs.map(({id}) => id)) ? value : undefined;
 }
 
-export function parseCheckpointsEnvelope(stdout: string): CheckpointsEnvelope | undefined {
+export function parseCheckpointsEnvelope(
+  stdout: string,
+): CheckpointsEnvelope | undefined {
   const value = validated(stdout);
-  if (value?.operation !== "checkpoints" || "status" in value) return undefined;
-  return unique(value.checkpoints.map(({ sequence }) => sequence)) ? value : undefined;
-}
-
-export function parseErrorEnvelope(stdout: string): ErrorEnvelope | undefined {
-  const value = validated(stdout);
-  return value !== undefined && "status" in value && value.status === "error"
+  if (value?.operation !== 'checkpoints' || 'status' in value) {
+    return undefined;
+  }
+  return unique(value.checkpoints.map(({sequence}) => sequence))
     ? value
     : undefined;
 }
 
-export function parseOperationEnvelope(stdout: string): OperationEnvelope | undefined {
+export function parseErrorEnvelope(stdout: string): ErrorEnvelope | undefined {
   const value = validated(stdout);
-  if (
-    value === undefined ||
-    !("status" in value) ||
-    value.status === "error"
-  ) return undefined;
-  const { error, ...result } = value;
-  return error == null ? result : { ...result, error };
+  return value !== undefined && 'status' in value && value.status === 'error'
+    ? value
+    : undefined;
+}
+
+export function parseOperationEnvelope(
+  stdout: string,
+): OperationEnvelope | undefined {
+  const value = validated(stdout);
+  if (value === undefined || !('status' in value) || value.status === 'error') {
+    return undefined;
+  }
+  const {error, ...result} = value;
+  return error === undefined || error === null ? result : {...result, error};
 }
 
 /** Errors for which retrying requires an explicit acknowledgement of provider side effects. */
-export function isIncompleteInvocationError(error: OperationError | undefined): boolean {
-  const code = error?.code ?? "";
-  return code === "invocation.ambiguous" ||
-    code.includes("incomplete") ||
-    code.includes("confirmation_required");
+export function isIncompleteInvocationError(
+  error: OperationError | undefined,
+): boolean {
+  const code = error?.code ?? '';
+  return (
+    code === 'invocation.ambiguous' ||
+    code.includes('incomplete') ||
+    code.includes('confirmation_required')
+  );
 }
 
-export type RunTree = {
+export interface RunTree {
   workflow: WorkflowIdentity;
   roots: RunBranch[];
   count: number;
-};
+}
 
-export type RunBranch = {
+export interface RunBranch {
   run: RunSummary;
   children: RunBranch[];
-};
+}
 
-const newestFirst = (left: RunSummary, right: RunSummary): number =>
-  right.updated_at.localeCompare(left.updated_at) || right.id.localeCompare(left.id);
+function newestFirst(left: RunSummary, right: RunSummary): number {
+  return (
+    right.updated_at.localeCompare(left.updated_at) ||
+    right.id.localeCompare(left.id)
+  );
+}
 
 /** Build a deterministic lineage forest without trusting malformed parent cycles. */
 export function buildRunTrees(runs: readonly RunSummary[]): RunTree[] {
@@ -208,13 +227,14 @@ export function buildRunTrees(runs: readonly RunSummary[]): RunTree[] {
     .map((workflowRuns): RunTree => {
       workflowRuns.sort(newestFirst);
       const branches = new Map(
-        workflowRuns.map((run) => [run.id, { run, children: [] as RunBranch[] }]),
+        workflowRuns.map(run => [run.id, {run, children: [] as RunBranch[]}]),
       );
       const roots: RunBranch[] = [];
       for (const run of workflowRuns) {
         const branch = branches.get(run.id)!;
         const parentId = run.parent?.run_id;
-        const parent = parentId === undefined ? undefined : branches.get(parentId);
+        const parent =
+          parentId === undefined ? undefined : branches.get(parentId);
         let ancestor = parent;
         let cyclic = false;
         const seen = new Set([run.id]);
@@ -227,28 +247,41 @@ export function buildRunTrees(runs: readonly RunSummary[]): RunTree[] {
           const next = ancestor.run.parent?.run_id;
           ancestor = next === undefined ? undefined : branches.get(next);
         }
-        if (parent === undefined || cyclic) roots.push(branch);
-        else parent.children.push(branch);
+        if (parent === undefined || cyclic) {
+          roots.push(branch);
+        } else {
+          parent.children.push(branch);
+        }
       }
-      for (const branch of branches.values()) branch.children.sort((a, b) => newestFirst(a.run, b.run));
+      for (const branch of branches.values()) {
+        branch.children.sort((a, b) => newestFirst(a.run, b.run));
+      }
       roots.sort((a, b) => newestFirst(a.run, b.run));
-      return { workflow: workflowRuns[0]!.workflow, roots, count: workflowRuns.length };
+      return {
+        workflow: workflowRuns[0].workflow,
+        roots,
+        count: workflowRuns.length,
+      };
     })
     .sort((left, right) => left.workflow.id.localeCompare(right.workflow.id));
 }
 
 export function boundaryLabel(boundary: BoundarySummary | null): string {
-  if (boundary === null) return "workflow completion";
-  const call = boundary.call_path === "" || boundary.call_path === "."
-    ? ""
-    : `${boundary.call_path}:`;
+  if (boundary === null) {
+    return 'workflow completion';
+  }
+  const call =
+    boundary.call_path === '' || boundary.call_path === '.'
+      ? ''
+      : `${boundary.call_path}:`;
   return `${call}${boundary.graph}/${boundary.node} #${boundary.visit}`;
 }
 
 export function parseWorkflowArguments(value: string): string[] | undefined {
   try {
     const decodedArguments = JSON.parse(value) as unknown;
-    return Array.isArray(decodedArguments) && decodedArguments.every((item) => typeof item === "string")
+    return Array.isArray(decodedArguments) &&
+      decodedArguments.every(item => typeof item === 'string')
       ? decodedArguments
       : undefined;
   } catch {
@@ -256,8 +289,16 @@ export function parseWorkflowArguments(value: string): string[] | undefined {
   }
 }
 
-export function resumeCliArguments(runId: string, retryIncomplete = false): string[] {
-  return ["resume", runId, "--json", ...(retryIncomplete ? ["--retry-incomplete"] : [])];
+export function resumeCliArguments(
+  runId: string,
+  retryIncomplete = false,
+): string[] {
+  return [
+    'resume',
+    runId,
+    '--json',
+    ...(retryIncomplete ? ['--retry-incomplete'] : []),
+  ];
 }
 
 export function restartCliArguments(
@@ -266,12 +307,14 @@ export function restartCliArguments(
   replacementArguments?: readonly string[],
 ): string[] {
   return [
-    "restart",
+    'restart',
     runId,
-    "--sessions",
+    '--sessions',
     sessions,
-    "--json",
-    ...(replacementArguments === undefined ? [] : ["--", ...replacementArguments]),
+    '--json',
+    ...(replacementArguments === undefined
+      ? []
+      : ['--', ...replacementArguments]),
   ];
 }
 
@@ -281,12 +324,12 @@ export function forkCliArguments(
   sessions: SessionPolicy,
 ): string[] {
   return [
-    "fork",
+    'fork',
     runId,
-    "--checkpoint",
+    '--checkpoint',
     String(checkpoint),
-    "--sessions",
+    '--sessions',
     sessions,
-    "--json",
+    '--json',
   ];
 }

@@ -1,6 +1,7 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
+
 /**
- * The graph's identity, computed here so staleness needs no service call.
+ * @fileoverview The graph's identity, computed here so staleness needs no service call.
  *
  * `project.json` records `generated_from`: the hash of the graph its generated tree was
  * produced from. Comparing that against the hash of the graph *now* is the whole of "is this
@@ -14,8 +15,8 @@
  * one canonical vector.
  */
 
-import { Buffer } from "node:buffer";
-import { createHash } from "node:crypto";
+import {Buffer} from 'node:buffer';
+import {createHash} from 'node:crypto';
 
 /** What the generated tree is a function of.
  *
@@ -30,55 +31,78 @@ import { createHash } from "node:crypto";
  * float: repository ids are safe integers, and coordinates live in excluded `editor` data.
  */
 function canonical(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) =>
-    left < right ? -1 : left > right ? 1 : 0,
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value) ?? 'null';
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonical).join(',')}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).sort(
+    ([left], [right]) => (left < right ? -1 : left > right ? 1 : 0),
   );
   return `{${entries
     .map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`)
-    .join(",")}}`;
+    .join(',')}}`;
 }
 
-const record = (value: unknown): Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
+function record(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
     : {};
+}
 
-const compareUtf8 = (left: unknown, right: unknown): number =>
-  Buffer.compare(Buffer.from(String(left), "utf8"), Buffer.from(String(right), "utf8"));
+function compareUtf8(left: unknown, right: unknown): number {
+  return Buffer.compare(
+    Buffer.from(String(left), 'utf8'),
+    Buffer.from(String(right), 'utf8'),
+  );
+}
 
-const sortedBy = (values: unknown, key: (value: Record<string, unknown>) => unknown): unknown =>
-  Array.isArray(values)
-    ? [...values].sort((left, right) => compareUtf8(key(record(left)), key(record(right))))
+function sortedBy(
+  values: unknown,
+  key: (value: Record<string, unknown>) => unknown,
+): unknown {
+  return Array.isArray(values)
+    ? [...values].sort((left, right) =>
+        compareUtf8(key(record(left)), key(record(right))),
+      )
     : values;
+}
 
 /** Normalize the ID-keyed collections the native model stores in ordered maps. */
 function normalizedSubroutine(value: unknown): unknown {
   const subroutine = record(value);
-  if (Object.keys(subroutine).length === 0) return value;
+  if (Object.keys(subroutine).length === 0) {
+    return value;
+  }
   const ports = record(subroutine.ports);
   const portIds = [ports.enter, ports.exit, ports.failure].filter(
-    (id): id is string => typeof id === "string",
+    (id): id is string => typeof id === 'string',
   );
   const portSet = new Set(portIds);
   const nodes = Array.isArray(subroutine.nodes) ? subroutine.nodes : [];
   const nodeById = new Map(
     nodes
-      .map((node) => [record(node).id, node] as const)
-      .filter((entry): entry is readonly [string, unknown] => typeof entry[0] === "string"),
+      .map(node => [record(node).id, node] as const)
+      .filter(
+        (entry): entry is readonly [string, unknown] =>
+          typeof entry[0] === 'string',
+      ),
   );
-  const subroutines = sortedBy(subroutine.subroutines, (item) => item.id);
+  const subroutines = sortedBy(subroutine.subroutines, item => item.id);
   return {
     ...subroutine,
     nodes: [
-      ...portIds.flatMap((id) => nodeById.has(id) ? [nodeById.get(id)] : []),
+      ...portIds.flatMap(id => (nodeById.has(id) ? [nodeById.get(id)] : [])),
       ...nodes
-        .filter((node) => !portSet.has(String(record(node).id)))
+        .filter(node => !portSet.has(String(record(node).id)))
         .sort((left, right) => compareUtf8(record(left).id, record(right).id)),
     ],
-    edges: sortedBy(subroutine.edges, (item) => item.id),
-    workflows: sortedBy(subroutine.workflows, (item) => item.id ?? item.subroutine),
+    edges: sortedBy(subroutine.edges, item => item.id),
+    workflows: sortedBy(
+      subroutine.workflows,
+      item => item.id ?? item.subroutine,
+    ),
     subroutines: Array.isArray(subroutines)
       ? subroutines.map(normalizedSubroutine)
       : subroutines,
@@ -87,30 +111,30 @@ function normalizedSubroutine(value: unknown): unknown {
 
 /** The sha256 of a graph, as the native compiler computes it. */
 export function graphHash(project: Record<string, unknown>): string {
-  const digest = createHash("sha256");
+  const digest = createHash('sha256');
   const fields: Record<string, unknown> = {
     package: project.package ?? null,
     workflow: project.workflow ?? null,
     subroutine: normalizedSubroutine(project.subroutine ?? null),
-    externals: sortedBy(project.externals ?? null, (item) => item.alias),
+    externals: sortedBy(project.externals ?? null, item => item.alias),
   };
-  digest.update(canonical(fields), "utf8");
+  digest.update(canonical(fields), 'utf8');
   const sources = Array.isArray(project.sources) ? project.sources : [];
   const owned = sources
     .filter(
       (entry): entry is Record<string, unknown> =>
         entry !== null &&
-        typeof entry === "object" &&
-        (entry as Record<string, unknown>).ownership === "user",
+        typeof entry === 'object' &&
+        (entry as Record<string, unknown>).ownership === 'user',
     )
     .sort((left, right) => compareUtf8(left.path, right.path));
   for (const entry of owned) {
-    digest.update(String(entry.path), "utf8");
-    digest.update("\0");
-    digest.update(String(entry.sha256), "ascii");
-    digest.update("\0");
+    digest.update(String(entry.path), 'utf8');
+    digest.update('\0');
+    digest.update(String(entry.sha256), 'ascii');
+    digest.update('\0');
   }
-  return digest.digest("hex");
+  return digest.digest('hex');
 }
 
 /**
@@ -120,5 +144,6 @@ export function graphHash(project: Record<string, unknown>): string {
  * computing rather than reading: a stored copy of the current hash would be wrong the moment
  * somebody edits the graph, which is exactly when the answer matters.
  */
-export const isStaleGraph = (project: Record<string, unknown>): boolean =>
-  project.generated_from !== graphHash(project);
+export function isStaleGraph(project: Record<string, unknown>): boolean {
+  return project.generated_from !== graphHash(project);
+}

@@ -1,24 +1,25 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
+
 import type {
   DefinitionKind,
   LocalWorkflowDefinition,
   NodeKind,
   SubroutineDefinition,
-} from "../model/project";
-import type { DocumentLink } from "../model/documents";
-import type { EdgeId, GraphId, NodeId } from "../model/identifiers";
+} from '../model/project';
+import type {DocumentLink} from '../model/documents';
+import type {EdgeId, GraphId, NodeId} from '../model/identifiers';
 
 /// Which subroutine a definition or call opens. `alias` is present for an external child and
 /// names its owner-local checkout. `ownerPath` qualifies children of a pinned project.
-export type DefinitionRef = {
+export interface DefinitionRef {
   alias?: string;
   graph: GraphId;
   ownerPath?: string;
   /** A workflow call opens its process boundary before entering `graph`. */
   scope?: string;
-};
+}
 
-export type DefinitionItem = {
+export interface DefinitionItem {
   /** The authored identity occurs more than once, so navigation must not guess a target. */
   ambiguous?: true;
   /** The graph that owns this definition. Deleting the root subroutine resets it. */
@@ -37,28 +38,28 @@ export type DefinitionItem = {
   target?: string;
   /** The local workflow envelope represented by this definition. */
   workflow?: LocalWorkflowDefinition;
-};
+}
 
-type SubroutineNodeData = {
+interface SubroutineNodeData {
   definition?: DefinitionRef;
   kind: NodeKind;
   label: string;
   /** The called subroutine's authored implementation module. */
   implementation?: string;
-};
+}
 
-export type SubroutineNode = {
+export interface SubroutineNode {
   data: SubroutineNodeData;
   id: NodeId;
-};
+}
 
-export type SubroutineEdge = {
+export interface SubroutineEdge {
   id: EdgeId;
   source: NodeId;
   target: NodeId;
-};
+}
 
-export type SubroutineGraph = {
+export interface SubroutineGraph {
   edges: SubroutineEdge[];
   /**
    * Unique across everything the canvas can draw.
@@ -70,14 +71,14 @@ export type SubroutineGraph = {
   id: string;
   nodes: SubroutineNode[];
   scope:
-    | { kind: "subroutine"; ownerGraph: string }
+    | {kind: 'subroutine'; ownerGraph: string}
     | {
         definition: GraphId;
-        kind: "workflow";
+        kind: 'workflow';
         ownerGraph: string;
         target: SubroutineDefinition;
         workflow: LocalWorkflowDefinition;
       };
-};
+}
 
 export type SubroutineMap = Record<string, SubroutineGraph>;

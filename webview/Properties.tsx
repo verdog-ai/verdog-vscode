@@ -1,19 +1,24 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
-import { useEffect, useState } from "react";
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
-import { defaultAgentInvokerOptions } from "../model/agents";
-import { AGENT_PROVIDERS } from "../model/project";
-import type { ResourceField } from "../model/resources";
-import type { PropertyRequest } from "../model/protocol";
-import type { EdgeConstraint, ProfileConfiguration } from "./propertyData";
+import {useEffect, useState} from 'react';
+
+import {defaultAgentInvokerOptions} from '../model/agents';
+import {AGENT_PROVIDERS} from '../model/project';
+import type {ResourceField} from '../model/resources';
+import type {PropertyRequest} from '../model/protocol';
+import type {EdgeConstraint, ProfileConfiguration} from './propertyData';
 
 /** Read and edit the inspected entity, committing fields on Enter or blur. */
-export type Field = { label: string; value: string };
-const resourceKey = (field: ResourceField): string =>
-  `${field.resource}:${field.parameter ?? ""}`;
+export interface Field {
+  label: string;
+  value: string;
+}
+function resourceKey(field: ResourceField): string {
+  return `${field.resource}:${field.parameter ?? ''}`;
+}
 const CONSTRAINT_SECTIONS = [
-  ["conditions", "Conditions"],
-  ["effects", "Effects"],
+  ['conditions', 'Conditions'],
+  ['effects', 'Effects'],
 ] as const;
 
 export function Properties({
@@ -47,7 +52,7 @@ export function Properties({
   /** Whether this edge's conditions and effects can be changed. */
   constraintsWritable: boolean;
   /** Files this entity has, offered as links rather than described. */
-  documents: { label: string; path: string }[];
+  documents: Array<{label: string; path: string}>;
   /** Everything else worth reading, in reading order. */
   fields: Field[];
   failedRequest?: PropertyRequest;
@@ -63,8 +68,8 @@ export function Properties({
   onOpen: (path: string) => void;
   onProfile: (profile: ProfileConfiguration) => void;
   onRemoveConstraint: (
-    collection: EdgeConstraint["collection"],
-    feature: EdgeConstraint["feature"],
+    collection: EdgeConstraint['collection'],
+    feature: EdgeConstraint['feature'],
   ) => void;
   onRename: (to: string) => void;
   onResources: (fields: ResourceField[]) => void;
@@ -78,41 +83,55 @@ export function Properties({
 }) {
   const [draftId, setDraftId] = useState(id);
   const [draftName, setDraftName] = useState(name);
-  const [draftResources, setDraftResources] = useState<Record<string, string>>({});
+  const [draftResources, setDraftResources] = useState<Record<string, string>>(
+    {},
+  );
   const [draftProfile, setDraftProfile] = useState(profile);
   const resourceState = resources
-    .map((field) => `${resourceKey(field)}=${field.value}`)
-    .join("\0");
+    .map(field => `${resourceKey(field)}=${field.value}`)
+    .join('\0');
   useEffect(() => {
     setDraftId(id);
     setDraftName(name);
   }, [id, name]);
   useEffect(() => {
-    setDraftResources(Object.fromEntries(
-      resources.map((field) => [resourceKey(field), field.value]),
-    ));
+    setDraftResources(
+      Object.fromEntries(
+        resources.map(field => [resourceKey(field), field.value]),
+      ),
+    );
   }, [id, resourceState]);
   const profileState = JSON.stringify(profile);
   useEffect(() => setDraftProfile(profile), [id, profileState]);
   useEffect(() => {
-    if (failedRequest?.edit.kind === "rename") setDraftId(id);
-    if (failedRequest?.edit.kind === "name") setDraftName(name);
+    if (failedRequest?.edit.kind === 'rename') {
+      setDraftId(id);
+    }
+    if (failedRequest?.edit.kind === 'name') {
+      setDraftName(name);
+    }
   }, [failedRequest, id, name]);
 
   const commitId = () => {
-    if (!idWritable || pending) return;
+    if (!idWritable || pending) {
+      return;
+    }
     const next = draftId.trim();
-    if (next === id) return;
-    if (next === "") {
+    if (next === id) {
+      return;
+    }
+    if (next === '') {
       setDraftId(id);
       return;
     }
     onRename(next);
   };
   const commitName = () => {
-    if (!nameWritable || pending) return;
+    if (!nameWritable || pending) {
+      return;
+    }
     const next = draftName.trim();
-    if (next === name || next === "") {
+    if (next === name || next === '') {
       setDraftName(name);
       return;
     }
@@ -122,7 +141,11 @@ export function Properties({
   return (
     <section aria-label={`${kind} properties`} className="properties">
       <p className="kind">{kind}</p>
-      <fieldset aria-busy={pending} className="property-fields" disabled={pending}>
+      <fieldset
+        aria-busy={pending}
+        className="property-fields"
+        disabled={pending}
+      >
         <dl>
           <dt>
             <label htmlFor="property-id">id</label>
@@ -132,10 +155,12 @@ export function Properties({
               disabled={!idWritable}
               id="property-id"
               onBlur={commitId}
-              onChange={(event) => setDraftId(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") event.currentTarget.blur();
-                if (event.key === "Escape") {
+              onChange={event => setDraftId(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter') {
+                  event.currentTarget.blur();
+                }
+                if (event.key === 'Escape') {
                   event.preventDefault();
                   event.stopPropagation();
                   setDraftId(id);
@@ -146,7 +171,7 @@ export function Properties({
               title={
                 idWritable
                   ? "Renaming moves this entity's files and rewrites what refers to it. Enter to apply."
-                  : "This id is derived, or this project is read-only."
+                  : 'This id is derived, or this project is read-only.'
               }
               value={draftId}
             />
@@ -159,22 +184,26 @@ export function Properties({
               disabled={!nameWritable}
               id="property-name"
               onBlur={commitName}
-              onChange={(event) => setDraftName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") event.currentTarget.blur();
-                if (event.key === "Escape") {
+              onChange={event => setDraftName(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter') {
+                  event.currentTarget.blur();
+                }
+                if (event.key === 'Escape') {
                   event.preventDefault();
                   event.stopPropagation();
                   setDraftName(name);
                 }
               }}
-              title={nameWritable
-                ? "Enter to apply this name."
-                : "This name is derived, or this project is read-only."}
+              title={
+                nameWritable
+                  ? 'Enter to apply this name.'
+                  : 'This name is derived, or this project is read-only.'
+              }
               value={draftName}
             />
           </dd>
-          {fields.map((field) => (
+          {fields.map(field => (
             <div key={field.label}>
               <dt>{field.label}</dt>
               <dd className="reading">{field.value}</dd>
@@ -198,82 +227,117 @@ export function Properties({
           {draftProfile !== undefined && (
             <>
               <div>
-                <dt><label htmlFor="property-provider">provider</label></dt>
+                <dt>
+                  <label htmlFor="property-provider">provider</label>
+                </dt>
                 <dd>
                   <select
                     disabled={!settingsWritable}
                     id="property-provider"
-                    onChange={(event) => {
-                      const provider = event.target.value as ProfileConfiguration["provider"];
-                      setDraftProfile({ provider, options: defaultAgentInvokerOptions() });
+                    onChange={event => {
+                      const provider = event.target
+                        .value as ProfileConfiguration['provider'];
+                      setDraftProfile({
+                        provider,
+                        options: defaultAgentInvokerOptions(),
+                      });
                     }}
                     value={draftProfile.provider}
                   >
-                    {AGENT_PROVIDERS.map((provider) => (
-                      <option key={provider} value={provider}>{provider}</option>
+                    {AGENT_PROVIDERS.map(provider => (
+                      <option key={provider} value={provider}>
+                        {provider}
+                      </option>
                     ))}
                   </select>
                 </dd>
               </div>
-              {(["model", "reasoning_effort"] as const).map((option) => (
+              {(['model', 'reasoning_effort'] as const).map(option => (
                 <div key={option}>
-                  <dt><label htmlFor={`property-profile-${option}`}>{option}</label></dt>
+                  <dt>
+                    <label htmlFor={`property-profile-${option}`}>
+                      {option}
+                    </label>
+                  </dt>
                   <dd>
                     <input
                       disabled={!settingsWritable}
                       id={`property-profile-${option}`}
-                      onChange={(event) => setDraftProfile((current) => current === undefined
-                        ? current
-                        : {
-                            ...current,
-                            options: {
-                              ...current.options,
-                              [option]: event.target.value || null,
-                            },
-                          })}
-                      placeholder={`default ${draftProfile.provider} ${option.replace("reasoning_", "")}`}
+                      onChange={event =>
+                        setDraftProfile(current =>
+                          current === undefined
+                            ? current
+                            : {
+                                ...current,
+                                options: {
+                                  ...current.options,
+                                  [option]: event.target.value || null,
+                                },
+                              },
+                        )
+                      }
+                      placeholder={`default ${draftProfile.provider} ${option.replace('reasoning_', '')}`}
                       spellCheck={false}
-                      value={draftProfile.options[option] ?? ""}
+                      value={draftProfile.options[option] ?? ''}
                     />
                   </dd>
                 </div>
               ))}
               <div>
-                <dt><label htmlFor="property-profile-web-search">web_search</label></dt>
+                <dt>
+                  <label htmlFor="property-profile-web-search">
+                    web_search
+                  </label>
+                </dt>
                 <dd>
                   <input
                     checked={draftProfile.options.web_search === true}
                     disabled={!settingsWritable}
                     id="property-profile-web-search"
-                    onChange={(event) => setDraftProfile((current) => current === undefined
-                      ? current
-                      : {
-                          ...current,
-                          options: { ...current.options, web_search: event.target.checked },
-                        })}
+                    onChange={event =>
+                      setDraftProfile(current =>
+                        current === undefined
+                          ? current
+                          : {
+                              ...current,
+                              options: {
+                                ...current.options,
+                                web_search: event.target.checked,
+                              },
+                            },
+                      )
+                    }
                     title="Let read-only agents of this profile search and fetch the web"
                     type="checkbox"
                   />
                 </dd>
               </div>
               <div>
-                <dt><label htmlFor="property-profile-extra-args">extra_args</label></dt>
+                <dt>
+                  <label htmlFor="property-profile-extra-args">
+                    extra_args
+                  </label>
+                </dt>
                 <dd>
                   <textarea
                     disabled={!settingsWritable}
                     id="property-profile-extra-args"
-                    onChange={(event) => setDraftProfile((current) => current === undefined
-                      ? current
-                      : {
-                          ...current,
-                          options: {
-                            ...current.options,
-                            extra_args: event.target.value.split("\n"),
-                          },
-                        })}
+                    onChange={event =>
+                      setDraftProfile(current =>
+                        current === undefined
+                          ? current
+                          : {
+                              ...current,
+                              options: {
+                                ...current.options,
+                                extra_args: event.target.value.split('\n'),
+                              },
+                            },
+                      )
+                    }
                     placeholder="one argument per line"
                     spellCheck={false}
-                    value={draftProfile.options.extra_args.join("\n")}
+                    value={draftProfile.options.extra_args.join('\n')}
                   />
                 </dd>
               </div>
@@ -282,13 +346,16 @@ export function Properties({
                 <dd>
                   <button
                     disabled={!settingsWritable}
-                    onClick={() => onProfile({
-                      ...draftProfile,
-                      options: {
-                        ...draftProfile.options,
-                        extra_args: draftProfile.options.extra_args.filter(Boolean),
-                      },
-                    })}
+                    onClick={() =>
+                      onProfile({
+                        ...draftProfile,
+                        options: {
+                          ...draftProfile.options,
+                          extra_args:
+                            draftProfile.options.extra_args.filter(Boolean),
+                        },
+                      })
+                    }
                     title={`Apply this ${draftProfile.provider} profile configuration`}
                     type="button"
                   >
@@ -300,13 +367,15 @@ export function Properties({
           )}
           {persistent !== undefined && (
             <div>
-              <dt><label htmlFor="property-session-persistent">persistent</label></dt>
+              <dt>
+                <label htmlFor="property-session-persistent">persistent</label>
+              </dt>
               <dd>
                 <input
                   checked={persistent}
                   disabled={!settingsWritable}
                   id="property-session-persistent"
-                  onChange={(event) => onSessionPersistence(event.target.checked)}
+                  onChange={event => onSessionPersistence(event.target.checked)}
                   type="checkbox"
                 />
               </dd>
@@ -317,7 +386,7 @@ export function Properties({
             const selected = draftResources[resourceKey(field)] ?? field.value;
             const hasValue = field.options.includes(selected);
             return (
-              <div key={`${field.resource}-${field.parameter ?? "agent"}`}>
+              <div key={`${field.resource}-${field.parameter ?? 'agent'}`}>
                 <dt>
                   <label htmlFor={control}>{field.label}</label>
                 </dt>
@@ -325,17 +394,21 @@ export function Properties({
                   <select
                     disabled={!resourcesWritable || field.options.length === 0}
                     id={control}
-                    onChange={(event) => setDraftResources((current) => ({
-                      ...current,
-                      [resourceKey(field)]: event.target.value,
-                    }))}
+                    onChange={event =>
+                      setDraftResources(current => ({
+                        ...current,
+                        [resourceKey(field)]: event.target.value,
+                      }))
+                    }
                     value={selected}
                   >
                     {!hasValue && (
-                      <option value={selected}>{selected || "unbound"}</option>
+                      <option value={selected}>{selected || 'unbound'}</option>
                     )}
-                    {field.options.map((option) => (
-                      <option key={option} value={option}>{option}</option>
+                    {field.options.map(option => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
                     ))}
                   </select>
                 </dd>
@@ -347,13 +420,24 @@ export function Properties({
               <dt />
               <dd>
                 <button
-                  disabled={!resourcesWritable || resources.some((field) =>
-                    !field.options.includes(draftResources[resourceKey(field)] ?? field.value)
-                  )}
-                  onClick={() => onResources(resources.map((field) => ({
-                    ...field,
-                    value: draftResources[resourceKey(field)] ?? field.value,
-                  })))}
+                  disabled={
+                    !resourcesWritable ||
+                    resources.some(
+                      field =>
+                        !field.options.includes(
+                          draftResources[resourceKey(field)] ?? field.value,
+                        ),
+                    )
+                  }
+                  onClick={() =>
+                    onResources(
+                      resources.map(field => ({
+                        ...field,
+                        value:
+                          draftResources[resourceKey(field)] ?? field.value,
+                      })),
+                    )
+                  }
                   title="Apply this node's profile and session bindings together"
                   type="button"
                 >
@@ -366,7 +450,9 @@ export function Properties({
         {constraints !== undefined && (
           <section aria-label="Edge constraints" className="edge-constraints">
             {CONSTRAINT_SECTIONS.map(([collection, heading]) => {
-              const rows = constraints.filter((constraint) => constraint.collection === collection);
+              const rows = constraints.filter(
+                constraint => constraint.collection === collection,
+              );
               return (
                 <section className="constraint-section" key={collection}>
                   <h2>{heading}</h2>
@@ -374,17 +460,21 @@ export function Properties({
                     <p className="constraint-empty">none</p>
                   ) : (
                     <ul className="constraint-list">
-                      {rows.map((constraint) => (
+                      {rows.map(constraint => (
                         <li className="constraint-row" key={constraint.feature}>
                           <code>{constraint.expression}</code>
                           <button
                             aria-label={`Remove ${collection.slice(0, -1)} ${constraint.expression}`}
                             className="delete-entry"
                             disabled={!constraintsWritable}
-                            onClick={() => onRemoveConstraint(collection, constraint.feature)}
-                            title={constraintsWritable
-                              ? `Remove ${constraint.expression}`
-                              : "This project is read-only."}
+                            onClick={() =>
+                              onRemoveConstraint(collection, constraint.feature)
+                            }
+                            title={
+                              constraintsWritable
+                                ? `Remove ${constraint.expression}`
+                                : 'This project is read-only.'
+                            }
                             type="button"
                           >
                             <svg aria-hidden="true" viewBox="0 0 16 16">
@@ -404,7 +494,7 @@ export function Properties({
       {pending && <p role="status">Saving…</p>}
       {documents.length > 0 && (
         <ul className="files">
-          {documents.map((document) => (
+          {documents.map(document => (
             <li key={document.path}>
               <button
                 onClick={() => onOpen(document.path)}

@@ -1,23 +1,24 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
+
 /**
- * The extension reaches the service through the CLI so credentials stay out of webviews and
+ * @fileoverview The extension reaches the service through the CLI so credentials stay out of webviews and
  * protocol handling has one implementation. Machine-readable commands own stdout; stderr is
  * kept separate for diagnostics.
  */
 
-import { spawn } from "node:child_process";
-import * as path from "node:path";
-import { createInterface } from "node:readline";
+import {spawn} from 'node:child_process';
+import * as path from 'node:path';
+import {createInterface} from 'node:readline';
 
-export type Outcome = {
+export interface Outcome {
   code: number;
   /** Stdout and stderr in the order their chunks reached this process. */
   combined: string;
   stderr: string;
   stdout: string;
-};
+}
 
-export type CliDiagnostic = {
+export interface CliDiagnostic {
   /** Stable machine-readable diagnostic identifier. */
   code?: string;
   column?: number;
@@ -26,15 +27,15 @@ export type CliDiagnostic = {
   file?: string;
   line?: number;
   message: string;
-  severity: "error" | "warning";
-};
+  severity: 'error' | 'warning';
+}
 
 /** What the canvas reads from `verdog check --json`. */
-export type Verdict = {
+export interface Verdict {
   diagnostics: CliDiagnostic[];
   /** The graph this verdict describes, so a later edit can invalidate it. */
   graphHash: string;
-};
+}
 
 /**
  * Run the CLI.
@@ -46,69 +47,86 @@ export type Verdict = {
  */
 export function verdog(
   root: string,
-  arguments_: string[],
+  args: string[],
   options: {
     command?: string[];
     /** A trusted editor setting; credentials are sent through stdin, never argv or env. */
-    backend?: { origin: string; token?: string };
+    backend?: {origin: string; token?: string};
     onLine?: (line: string) => void;
     onStderrLine?: (line: string) => void;
     onStdoutLine?: (line: string) => void;
     signal?: AbortSignal;
   } = {},
 ): Promise<Outcome> {
-  const { onLine, onStderrLine, onStdoutLine, signal } = options;
+  const {onLine, onStderrLine, onStdoutLine, signal} = options;
   const [executable, ...prefix] = options.command?.length
     ? options.command
-    : ["verdog"];
-  return new Promise((resolve) => {
+    : ['verdog'];
+  return new Promise(resolve => {
     if (signal?.aborted) {
-      resolve({ code: 130, combined: "", stderr: "", stdout: "" });
+      resolve({code: 130, combined: '', stderr: '', stdout: ''});
       return;
     }
     // A configurable launcher (for example uv) may have a Python child of its own.
-    const processGroup = signal !== undefined && process.platform !== "win32";
-    const env = { ...process.env };
+    const processGroup = signal !== undefined && process.platform !== 'win32';
+    const env = {...process.env};
     delete env.VERDOG_BACKEND_ORIGIN;
     delete env.VERDOG_SESSION_TOKEN_STDIN;
     if (options.backend !== undefined) {
       env.VERDOG_BACKEND_ORIGIN = options.backend.origin;
-      if (options.backend.token !== undefined) env.VERDOG_SESSION_TOKEN_STDIN = "1";
+      if (options.backend.token !== undefined) {
+        env.VERDOG_SESSION_TOKEN_STDIN = '1';
+      }
     }
     // An older CLI must reject this option instead of silently using its saved backend.
-    const backendArguments = options.backend === undefined ? [] : ["--backend-origin", options.backend.origin];
-    const child = spawn(executable, [...prefix, ...backendArguments, ...arguments_], { cwd: root, detached: processGroup, env });
-    let combined = "";
-    let stderr = "";
-    let stdout = "";
+    const backendArguments =
+      options.backend === undefined
+        ? []
+        : ['--backend-origin', options.backend.origin];
+    const child = spawn(executable, [...prefix, ...backendArguments, ...args], {
+      cwd: root,
+      detached: processGroup,
+      env,
+    });
+    let combined = '';
+    let stderr = '';
+    let stdout = '';
     let settled = false;
     const abort = () => {
-      if (child.pid === undefined || settled) return;
-      if (process.platform === "win32") {
-        const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
-        killer.once("error", () => child.kill("SIGKILL"));
+      if (child.pid === undefined || settled) {
+        return;
+      }
+      if (process.platform === 'win32') {
+        const killer = spawn(
+          'taskkill',
+          ['/pid', String(child.pid), '/T', '/F'],
+          {windowsHide: true},
+        );
+        killer.once('error', () => child.kill('SIGKILL'));
         return;
       }
       try {
-        process.kill(processGroup ? -child.pid : child.pid, "SIGKILL");
+        process.kill(processGroup ? -child.pid : child.pid, 'SIGKILL');
       } catch {
-        child.kill("SIGKILL");
+        child.kill('SIGKILL');
       }
     };
-    signal?.addEventListener("abort", abort, { once: true });
+    signal?.addEventListener('abort', abort, {once: true});
     const finish = (outcome: Outcome) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
-      signal?.removeEventListener("abort", abort);
+      signal?.removeEventListener('abort', abort);
       resolve(outcome);
     };
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
       stdout += chunk;
       combined += chunk;
     });
-    child.stderr.on("data", (chunk: string) => {
+    child.stderr.on('data', (chunk: string) => {
       stderr += chunk;
       combined += chunk;
     });
@@ -116,63 +134,88 @@ export function verdog(
       [child.stdout, onStdoutLine],
       [child.stderr, onStderrLine],
     ] as const) {
-      if (onLine === undefined && specific === undefined) continue;
-      createInterface({ input: stream, crlfDelay: Infinity }).on("line", (line) => {
-        if (!line) return;
+      if (onLine === undefined && specific === undefined) {
+        continue;
+      }
+      createInterface({input: stream, crlfDelay: Infinity}).on('line', line => {
+        if (!line) {
+          return;
+        }
         onLine?.(line);
         specific?.(line);
       });
     }
-    child.once("error", (error) => {
+    child.once('error', error => {
       const lines = [
         `${executable} could not be started: ${error.message}`,
         "Install the CLI with `uv tool install 'verdog-runtime>=0.1.1'`, or set " +
-          "`verdog.command` to an argument array containing its executable path.",
+          '`verdog.command` to an argument array containing its executable path.',
       ];
       for (const line of lines) {
         onLine?.(line);
         onStderrLine?.(line);
       }
-      const message = lines.join("\n");
-      finish({ code: 127, combined: combined + message, stderr: stderr + message, stdout });
+      const message = lines.join('\n');
+      finish({
+        code: 127,
+        combined: combined + message,
+        stderr: stderr + message,
+        stdout,
+      });
     });
-    child.once("close", (code) => finish({ code: signal?.aborted ? 130 : code ?? 1, combined, stderr, stdout }));
-    child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+    child.once('close', code =>
+      finish({
+        code: signal?.aborted ? 130 : (code ?? 1),
+        combined,
+        stderr,
+        stdout,
+      }),
+    );
+    child.stdin.on('error', (error: NodeJS.ErrnoException) => {
       // A process that fails before reading stdin reports its own exit status.
-      if (error.code !== "EPIPE" && error.code !== "ERR_STREAM_DESTROYED") {
+      if (error.code !== 'EPIPE' && error.code !== 'ERR_STREAM_DESTROYED') {
         child.kill();
-        const message = "The Verdog CLI input pipe failed.";
-        finish({ code: 1, combined: message, stderr: message, stdout: "" });
+        const message = 'The Verdog CLI input pipe failed.';
+        finish({code: 1, combined: message, stderr: message, stdout: ''});
       }
     });
-    child.stdin.end(options.backend?.token ?? "");
+    child.stdin.end(options.backend?.token ?? '');
   });
 }
 
 function diagnostic(value: unknown, root: string): CliDiagnostic | undefined {
-  if (!value || typeof value !== "object") return undefined;
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
   const item = value as Record<string, unknown>;
-  const message = typeof item.message === "string" ? item.message : "";
-  if (!message) return undefined;
-  const severity = item.severity === "warning" ? "warning" : "error";
-  const file = typeof item.path === "string" && item.path
-    ? path.join(root, ...item.path.split("/"))
-    : undefined;
-  const code = typeof item.code === "string" && item.code ? item.code : undefined;
+  const message = typeof item.message === 'string' ? item.message : '';
+  if (!message) {
+    return undefined;
+  }
+  const severity = item.severity === 'warning' ? 'warning' : 'error';
+  const file =
+    typeof item.path === 'string' && item.path
+      ? path.join(root, ...item.path.split('/'))
+      : undefined;
+  const code =
+    typeof item.code === 'string' && item.code ? item.code : undefined;
   return {
     code,
-    column: typeof item.column === "number" ? item.column : undefined,
-    endColumn: typeof item.end_column === "number" ? item.end_column : undefined,
-    endLine: typeof item.end_line === "number" ? item.end_line : undefined,
+    column: typeof item.column === 'number' ? item.column : undefined,
+    endColumn:
+      typeof item.end_column === 'number' ? item.end_column : undefined,
+    endLine: typeof item.end_line === 'number' ? item.end_line : undefined,
     file,
-    line: typeof item.line === "number" ? item.line : undefined,
+    line: typeof item.line === 'number' ? item.line : undefined,
     message: code ? `${message} [${code}]` : message,
     severity,
   };
 }
 
 /** Convert the CLI's one-based, end-exclusive source span to VS Code coordinates. */
-export function diagnosticRange(item: CliDiagnostic): [number, number, number, number] {
+export function diagnosticRange(
+  item: CliDiagnostic,
+): [number, number, number, number] {
   const line = Math.max((item.line ?? 1) - 1, 0);
   const column = Math.max((item.column ?? 1) - 1, 0);
   if (
@@ -191,17 +234,22 @@ export function diagnosticRange(item: CliDiagnostic): [number, number, number, n
 }
 
 /** Read the single object emitted by `check --json`. */
-export function parseVerdict(stdout: string, root: string): Verdict | undefined {
+export function parseVerdict(
+  stdout: string,
+  root: string,
+): Verdict | undefined {
   let decoded: unknown;
   try {
     decoded = JSON.parse(stdout);
   } catch {
     return undefined;
   }
-  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) return undefined;
+  if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
+    return undefined;
+  }
   const body = decoded as Record<string, unknown>;
   if (
-    typeof body.graph_hash !== "string" ||
+    typeof body.graph_hash !== 'string' ||
     !Array.isArray(body.diagnostics) ||
     !Array.isArray(body.type_diagnostics)
   ) {
@@ -209,7 +257,7 @@ export function parseVerdict(stdout: string, root: string): Verdict | undefined 
   }
   return {
     diagnostics: [...body.diagnostics, ...body.type_diagnostics]
-      .map((item) => diagnostic(item, root))
+      .map(item => diagnostic(item, root))
       .filter((item): item is CliDiagnostic => item !== undefined),
     graphHash: body.graph_hash,
   };

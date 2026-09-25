@@ -1,10 +1,11 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
-import type { ProjectEdge } from "./project";
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
-export type DocumentRefs = {
+import type {ProjectEdge} from './project';
+
+export interface DocumentRefs {
   declaration: string;
   implementation?: string;
-};
+}
 
 export type EntityDocumentRefs = DocumentRefs & {
   visit?: DocumentRefs;
@@ -17,14 +18,14 @@ export function moduleDocumentPaths(
 ): DocumentRefs {
   return {
     declaration: `${root}/__init__.py`,
-    ...(implementation ? { implementation: `${root}/impl.py` } : {}),
+    ...(implementation ? {implementation: `${root}/impl.py`} : {}),
   };
 }
 
 /** A visit is the target node's entry handler selected by an incoming edge. */
 export function visitDocumentPaths(
   nodeRoot: string,
-  edge: Pick<ProjectEdge, "id">,
+  edge: Pick<ProjectEdge, 'id'>,
 ): DocumentRefs {
   const root = `${nodeRoot}/visit/${edge.id}`;
   return {
@@ -33,84 +34,89 @@ export function visitDocumentPaths(
   };
 }
 
-export type DocumentLink = { label: string; path: string };
+export interface DocumentLink {
+  label: string;
+  path: string;
+}
 
 /** Files owned by one local definition, independent of whether its manifest lists them. */
 export function definitionDocumentPaths(
   root: string,
-  kind: "subroutine" | "workflow",
+  kind: 'subroutine' | 'workflow',
 ): DocumentLink[] {
   return [
-    { label: `${kind} declaration`, path: `${root}/__init__.py` },
-    { label: `${kind} implementation`, path: `${root}/impl.py` },
-    ...(kind === "workflow" ? [{ label: "requirements", path: `${root}/requirements.txt` }] : []),
+    {label: `${kind} declaration`, path: `${root}/__init__.py`},
+    {label: `${kind} implementation`, path: `${root}/impl.py`},
+    ...(kind === 'workflow'
+      ? [{label: 'requirements', path: `${root}/requirements.txt`}]
+      : []),
   ];
 }
 
 export type DocumentedEntity =
-  | "edges"
-  | "features"
-  | "nodes"
-  | "profile_parameters"
-  | "profiles"
-  | "session_parameters"
-  | "sessions";
+  | 'edges'
+  | 'features'
+  | 'nodes'
+  | 'profile_parameters'
+  | 'profiles'
+  | 'session_parameters'
+  | 'sessions';
 
-type DocumentKind = DocumentedEntity | "visits";
+type DocumentKind = DocumentedEntity | 'visits';
 
 /** Document keys in the order they are worth opening. */
 const DOCUMENT_KEYS = [
-  "implementation",
-  "declaration",
-] as const satisfies readonly (keyof DocumentRefs)[];
+  'implementation',
+  'declaration',
+] as const satisfies ReadonlyArray<keyof DocumentRefs>;
 
 const ENTITY_LABELS: Record<
   DocumentKind,
   Partial<Record<keyof DocumentRefs, string>>
 > = {
   edges: {
-    declaration: "edge declaration",
+    declaration: 'edge declaration',
   },
   features: {
-    declaration: "feature declaration",
+    declaration: 'feature declaration',
   },
   nodes: {
-    declaration: "node declaration",
-    implementation: "node implementation",
+    declaration: 'node declaration',
+    implementation: 'node implementation',
   },
   profile_parameters: {
-    declaration: "profile parameter declaration",
+    declaration: 'profile parameter declaration',
   },
   profiles: {
-    declaration: "profile declaration",
-    implementation: "profile implementation",
+    declaration: 'profile declaration',
+    implementation: 'profile implementation',
   },
   session_parameters: {
-    declaration: "session parameter declaration",
+    declaration: 'session parameter declaration',
   },
   sessions: {
-    declaration: "session declaration",
-    implementation: "session implementation",
+    declaration: 'session declaration',
+    implementation: 'session implementation',
   },
   visits: {
-    declaration: "visit declaration",
-    implementation: "visit implementation",
+    declaration: 'visit declaration',
+    implementation: 'visit implementation',
   },
 };
 
-export const documentsOf = (
+export function documentsOf(
   refs: DocumentRefs | undefined,
   kind: DocumentKind,
-): DocumentLink[] =>
-  DOCUMENT_KEYS
-    .flatMap((key) => {
-      const path = refs?.[key];
-      const label = ENTITY_LABELS[kind][key];
-      return path === undefined || label === undefined
-        ? []
-        : [{ label, path }];
-    })
-    .sort((left, right) => left.label.localeCompare(right.label));
+): DocumentLink[] {
+  return DOCUMENT_KEYS.flatMap(key => {
+    const path = refs?.[key];
+    const label = ENTITY_LABELS[kind][key];
+    return path === undefined || label === undefined ? [] : [{label, path}];
+  }).sort((left, right) => left.label.localeCompare(right.label));
+}
 
-export const visitDocumentsOf = (refs: EntityDocumentRefs | undefined): DocumentLink[] =>
-  documentsOf(refs?.visit, "visits");
+export function visitDocumentsOf(
+  refs: EntityDocumentRefs | undefined,
+): DocumentLink[] {
+  return documentsOf(refs?.visit, 'visits');
+}

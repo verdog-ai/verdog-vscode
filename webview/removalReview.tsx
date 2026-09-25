@@ -1,52 +1,68 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
-import "./identityPage.css";
-import "./removalReview.css";
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
-import { useEffect, useMemo, useState } from "react";
-import { createRoot } from "react-dom/client";
+import './identityPage.css';
+import './removalReview.css';
 
-import type { RemovalImpact, RemovalReason } from "../model/editing";
-import { entityLabel } from "../model/names";
-import type {
-  HostToRemovalReview,
-  RemovalReviewToHost,
-} from "../model/protocol";
-import { EntityTree } from "./EntityTree";
+import {useEffect, useMemo, useState} from 'react';
+import {createRoot} from 'react-dom/client';
 
-type Host = { postMessage: (message: RemovalReviewToHost) => void };
-type Review = HostToRemovalReview["review"];
-type Section = "selected" | "deleted" | "updated";
+import type {RemovalImpact, RemovalReason} from '../model/editing';
+import {entityLabel} from '../model/names';
+import type {HostToRemovalReview, RemovalReviewToHost} from '../model/protocol';
+import {EntityTree} from './EntityTree';
+
+interface Host {
+  postMessage: (message: RemovalReviewToHost) => void;
+}
+type Review = HostToRemovalReview['review'];
+type Section = 'selected' | 'deleted' | 'updated';
 
 declare function acquireVsCodeApi(): Host;
 
 export function sectionOf(impact: RemovalImpact): Section {
-  if (impact.effect === "update") return "updated";
-  return impact.reasons.some((reason) => reason === "selected" || reason === "contained")
-    ? "selected"
-    : "deleted";
+  if (impact.effect === 'update') {
+    return 'updated';
+  }
+  return impact.reasons.some(
+    reason => reason === 'selected' || reason === 'contained',
+  )
+    ? 'selected'
+    : 'deleted';
 }
 
-const reasonLabel = (reason: RemovalReason): string => reason.replaceAll("_", " ");
+function reasonLabel(reason: RemovalReason): string {
+  return reason.replaceAll('_', ' ');
+}
 
-function Impact({ host, impact, index }: { host: Host; impact: RemovalImpact; index: number }) {
+function Impact({
+  host,
+  impact,
+  index,
+}: {
+  host: Host;
+  impact: RemovalImpact;
+  index: number;
+}) {
   return (
     <li className="impact">
       <a
         className="impact-link"
         href={`#impact-${index}`}
-        onClick={(event) => {
+        onClick={event => {
           event.preventDefault();
-          if (event.detail > 1) return;
-          host.postMessage({ index, kind: "reveal" });
+          if (event.detail > 1) {
+            return;
+          }
+          host.postMessage({index, kind: 'reveal'});
         }}
-        onDoubleClick={(event) => {
+        onDoubleClick={event => {
           event.preventDefault();
-          host.postMessage({ index, kind: "open" });
+          host.postMessage({index, kind: 'open'});
         }}
         title={`Reveal ${entityLabel(impact.entity)} ${impact.id}; double-click to open its declaration`}
       >
         <code>{impact.id}</code>
-        {impact.reasons.map((reason) => (
+        {impact.reasons.map(reason => (
           <span className="reason" key={reason}>
             {reasonLabel(reason)}
           </span>
@@ -67,7 +83,9 @@ function ImpactSection({
   indexes: ReadonlyMap<RemovalImpact, number>;
   label: string;
 }) {
-  if (impacts.length === 0) return undefined;
+  if (impacts.length === 0) {
+    return undefined;
+  }
   return (
     <details className="section" open>
       <summary>
@@ -76,12 +94,12 @@ function ImpactSection({
       </summary>
       <EntityTree
         items={impacts}
-        renderItem={(impact) => (
+        renderItem={impact => (
           <Impact
             host={host}
             impact={impact}
             index={indexes.get(impact)!}
-            key={`${impact.workflow ?? ""}:${impact.entity}:${impact.id}`}
+            key={`${impact.workflow ?? ''}:${impact.entity}:${impact.id}`}
           />
         )}
       />
@@ -89,8 +107,10 @@ function ImpactSection({
   );
 }
 
-function Imports({ aliases }: { aliases: string[] }) {
-  if (aliases.length === 0) return undefined;
+function Imports({aliases}: {aliases: string[]}) {
+  if (aliases.length === 0) {
+    return undefined;
+  }
   return (
     <details className="section" open>
       <summary>
@@ -98,7 +118,7 @@ function Imports({ aliases }: { aliases: string[] }) {
         <span className="count">{aliases.length}</span>
       </summary>
       <ul className="tree imports">
-        {[...aliases].sort().map((alias) => (
+        {[...aliases].sort().map(alias => (
           <li className="impact" key={alias}>
             <code>{alias}</code>
           </li>
@@ -108,8 +128,8 @@ function Imports({ aliases }: { aliases: string[] }) {
   );
 }
 
-function Review({ host, review }: { host: Host; review: Review }) {
-  const verb = review.reset ? "Reset" : "Delete";
+function Review({host, review}: {host: Host; review: Review}) {
+  const verb = review.reset ? 'Reset' : 'Delete';
   const indexes = useMemo(
     () => new Map(review.impacts.map((impact, index) => [impact, index])),
     [review.impacts],
@@ -120,7 +140,9 @@ function Review({ host, review }: { host: Host; review: Review }) {
       selected: [],
       updated: [],
     };
-    for (const impact of review.impacts) grouped[sectionOf(impact)].push(impact);
+    for (const impact of review.impacts) {
+      grouped[sectionOf(impact)].push(impact);
+    }
     return grouped;
   }, [review.impacts]);
   const deleted = sections.selected.length + sections.deleted.length;
@@ -132,7 +154,7 @@ function Review({ host, review }: { host: Host; review: Review }) {
           {verb} {review.subject.label} <code>{review.subject.id}</code>?
         </h1>
         <p className="summary">
-          {deleted} {deleted === 1 ? "identity" : "identities"} will be deleted
+          {deleted} {deleted === 1 ? 'identity' : 'identities'} will be deleted
           {sections.updated.length === 0
             ? undefined
             : ` · ${sections.updated.length} will be updated`}
@@ -162,28 +184,32 @@ function Review({ host, review }: { host: Host; review: Review }) {
       <footer>
         <p>
           {review.hasAuthoredCode
-            ? "Authored code owned by these identities will move to Trash. "
-            : ""}
+            ? 'Authored code owned by these identities will move to Trash. '
+            : ''}
           {review.reset
-            ? "The required ports and pass-through route will be regenerated. "
-            : ""}
+            ? 'The required ports and pass-through route will be regenerated. '
+            : ''}
           Generated files are omitted and will be regenerated.
           {review.orphaned.length === 0
             ? undefined
-            : " Unused imports are cleaned up afterward; a dirty checkout may require retrying."}
+            : ' Unused imports are cleaned up afterward; a dirty checkout may require retrying.'}
         </p>
         <div className="actions">
-          <button autoFocus onClick={() => host.postMessage({ kind: "cancel" })} type="button">
+          <button
+            autoFocus
+            onClick={() => host.postMessage({kind: 'cancel'})}
+            type="button"
+          >
             Cancel
           </button>
           <button
             className="delete"
-            onClick={() => host.postMessage({ kind: "delete" })}
+            onClick={() => host.postMessage({kind: 'delete'})}
             type="button"
           >
             {review.reset
               ? `Reset to empty ${review.subject.id}`
-              : `Delete ${deleted} ${deleted === 1 ? "identity" : "identities"}`}
+              : `Delete ${deleted} ${deleted === 1 ? 'identity' : 'identities'}`}
           </button>
         </div>
       </footer>
@@ -191,34 +217,44 @@ function Review({ host, review }: { host: Host; review: Review }) {
   );
 }
 
-function App({ host }: { host: Host }) {
+function App({host}: {host: Host}) {
   const [review, setReview] = useState<Review>();
 
   useEffect(() => {
     const listen = (event: MessageEvent) => {
       const message = event.data as HostToRemovalReview;
-      if (message.kind === "review") setReview(message.review);
+      if (message.kind === 'review') {
+        setReview(message.review);
+      }
     };
     const cancel = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== 'Escape') {
+        return;
+      }
       event.preventDefault();
-      host.postMessage({ kind: "cancel" });
+      host.postMessage({kind: 'cancel'});
     };
-    window.addEventListener("message", listen);
-    window.addEventListener("keydown", cancel);
-    host.postMessage({ kind: "ready" });
+    window.addEventListener('message', listen);
+    window.addEventListener('keydown', cancel);
+    host.postMessage({kind: 'ready'});
     return () => {
-      window.removeEventListener("message", listen);
-      window.removeEventListener("keydown", cancel);
+      window.removeEventListener('message', listen);
+      window.removeEventListener('keydown', cancel);
     };
   }, [host]);
 
-  return review === undefined
-    ? <p className="loading" role="status">Preparing deletion review…</p>
-    : <Review host={host} review={review} />;
+  return review === undefined ? (
+    <p className="loading" role="status">
+      Preparing deletion review…
+    </p>
+  ) : (
+    <Review host={host} review={review} />
+  );
 }
 
-if (typeof document !== "undefined") {
-  const mount = document.getElementById("root");
-  if (mount !== null) createRoot(mount).render(<App host={acquireVsCodeApi()} />);
+if (typeof document !== 'undefined') {
+  const mount = document.getElementById('root');
+  if (mount !== null) {
+    createRoot(mount).render(<App host={acquireVsCodeApi()} />);
+  }
 }

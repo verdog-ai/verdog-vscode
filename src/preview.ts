@@ -1,6 +1,7 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
+
 /**
- * Reading a published workflow by checking it out, read-only, in its own window.
+ * @fileoverview Reading a published workflow by checking it out, read-only, in its own window.
  *
  * This replaces a `TextDocumentContentProvider` on a scheme of our own, which served bytes
  * from a blobless clone via `git show`. That made the files read-only *by construction* --
@@ -33,11 +34,11 @@
  * not declare, which defeats the point of reproducible inspection.
  */
 
-import { createHash } from "node:crypto";
-import * as path from "node:path";
+import {createHash} from 'node:crypto';
+import * as path from 'node:path';
 
 /** What a preview window needs to know about itself, and nothing else. */
-export type Preview = {
+export interface Preview {
   commit: string;
   /**
    * The project this preview was opened from, so Import can write there.
@@ -49,7 +50,7 @@ export type Preview = {
   origin?: string;
   repository: string;
   workflow: string;
-};
+}
 
 /**
  * Where the marker lives.
@@ -58,18 +59,18 @@ export type Preview = {
  * be committed (`local.py` writes `.git/verdog.json`), it never shows up in the Explorer, it
  * needs no `.gitignore` entry, and it stays writable when the work tree is locked.
  */
-export const MARKER = path.join(".git", "verdog-preview.json");
-export const INSPECTION_MARKER = path.join(".git", "verdog-inspection.json");
+export const MARKER = path.join('.git', 'verdog-preview.json');
+export const INSPECTION_MARKER = path.join('.git', 'verdog-inspection.json');
 
-export type InspectionState = {
+export interface InspectionState {
   catalogue?: string;
-  dependencies: "incomplete" | "ready";
-  environment: "incomplete" | "ready";
-  metadata: "mismatch" | "ready" | "unchecked";
+  dependencies: 'incomplete' | 'ready';
+  environment: 'incomplete' | 'ready';
+  metadata: 'mismatch' | 'ready' | 'unchecked';
   preview: Preview;
-  source: "ready";
+  source: 'ready';
   version: 1;
-};
+}
 
 /**
  * Where a previewed commit is checked out.
@@ -84,17 +85,25 @@ export function checkoutRoot(
   commit: string,
   workflow: string,
 ): string {
-  return path.join(storage, "preview", previewKey(repository, commit, workflow));
+  return path.join(
+    storage,
+    'preview',
+    previewKey(repository, commit, workflow),
+  );
 }
 
-function previewKey(repository: string, commit: string, workflow: string): string {
-  return createHash("sha256")
+function previewKey(
+  repository: string,
+  commit: string,
+  workflow: string,
+): string {
+  return createHash('sha256')
     .update(repository)
-    .update("\0")
+    .update('\0')
     .update(commit)
-    .update("\0")
+    .update('\0')
     .update(workflow)
-    .digest("hex");
+    .digest('hex');
 }
 
 export function previewWorkspace(
@@ -103,7 +112,11 @@ export function previewWorkspace(
   commit: string,
   workflow: string,
 ): string {
-  return path.join(storage, "preview-workspaces", `${previewKey(repository, commit, workflow)}.code-workspace`);
+  return path.join(
+    storage,
+    'preview-workspaces',
+    `${previewKey(repository, commit, workflow)}.code-workspace`,
+  );
 }
 
 /**
@@ -114,16 +127,19 @@ export function previewWorkspace(
  * They are embedded in a disposable `.code-workspace`, so a publisher's tracked
  * `.vscode/settings.json` is never overwritten.
  */
-export function settings(preview: Preview, interpreter: string | undefined): string {
+export function settings(
+  preview: Preview,
+  interpreter: string | undefined,
+): string {
   const value: Record<string, unknown> = {
     // Says "read-only" before the keystroke rather than at save time, which is where a person
     // finds out otherwise. `fromPermissions` defaults to false, so `chmod` alone marks nothing.
-    "files.readonlyInclude": { "**": true },
-    "files.readonlyFromPermissions": true,
+    'files.readonlyInclude': {'**': true},
+    'files.readonlyFromPermissions': true,
     // Not cosmetic: this checkout has `origin` on the author's real repository at a detached
     // HEAD. For a repository you can write to -- previewing your own published workflow --
     // the SCM view is one click away from committing and pushing to it.
-    "git.enabled": false,
+    'git.enabled': false,
     // Their manifest is `strict` with ~19 rules as errors, and it was checked against *their*
     // environment. Reporting that verdict as the reader's would read as "this author publishes
     // broken code".
@@ -131,13 +147,13 @@ export function settings(preview: Preview, interpreter: string | undefined): str
     // `off` rather than ignoring the files outright, because `off` still reports **unresolved
     // imports**. That is the one diagnostic a reader needs: if a declared dependency did not
     // install, empty hovers on `np.` have a reason, and silence would hide it.
-    "python.analysis.typeCheckingMode": "off",
-    "window.title": `${preview.repository}@${preview.commit.slice(0, 12)} (read-only preview)`,
+    'python.analysis.typeCheckingMode': 'off',
+    'window.title': `${preview.repository}@${preview.commit.slice(0, 12)} (read-only preview)`,
   };
   if (interpreter !== undefined) {
     // Only the selected workflow's environment. Pylance reads project source links from its
     // `.pth` file; another project's interpreter would resolve the wrong dependency versions.
-    value["python.defaultInterpreterPath"] = interpreter;
+    value['python.defaultInterpreterPath'] = interpreter;
   }
   return `${JSON.stringify(value, undefined, 2)}\n`;
 }
@@ -148,19 +164,38 @@ export function workspace(
   folder: string,
   interpreter: string | undefined,
 ): string {
-  return `${JSON.stringify({
-    folders: [{ path: folder }],
-    settings: JSON.parse(settings(preview, interpreter)) as Record<string, unknown>,
-  }, undefined, 2)}\n`;
+  return `${JSON.stringify(
+    {
+      folders: [{path: folder}],
+      settings: JSON.parse(settings(preview, interpreter)) as Record<
+        string,
+        unknown
+      >,
+    },
+    undefined,
+    2,
+  )}\n`;
 }
 
 /**
  * Where the selected workflow's isolated interpreter would be, on either platform.
  */
-export function interpreterIn(root: string | undefined, workflow?: string): string[] {
-  if (root === undefined || workflow === undefined) return [];
+export function interpreterIn(
+  root: string | undefined,
+  workflow?: string,
+): string[] {
+  if (root === undefined || workflow === undefined) {
+    return [];
+  }
   return [
-    path.join(root, ".verdog", "environments", workflow, "bin", "python"),
-    path.join(root, ".verdog", "environments", workflow, "Scripts", "python.exe"),
+    path.join(root, '.verdog', 'environments', workflow, 'bin', 'python'),
+    path.join(
+      root,
+      '.verdog',
+      'environments',
+      workflow,
+      'Scripts',
+      'python.exe',
+    ),
   ];
 }

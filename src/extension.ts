@@ -1,14 +1,15 @@
-// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
-import * as vscode from "vscode";
+/** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
-import { registerCanvas, showCanvas } from "./canvasView";
-import { initializeBackend } from "./backend";
-import { registerCatalogue, registerPreviewCommands } from "./catalogueView";
-import { readMarker } from "./checkout";
-import { REVEAL_CANVAS, newProject } from "./newProject";
-import { registerProjectCommands } from "./projectActions";
-import { registerRunHistory } from "./runHistoryView";
-import { definitionIndex, definitionKey } from "../model/project";
+import * as vscode from 'vscode';
+
+import {registerCanvas, showCanvas} from './canvasView';
+import {initializeBackend} from './backend';
+import {registerCatalogue, registerPreviewCommands} from './catalogueView';
+import {readMarker} from './checkout';
+import {REVEAL_CANVAS, newProject} from './newProject';
+import {registerProjectCommands} from './projectActions';
+import {registerRunHistory} from './runHistoryView';
+import {definitionIndex, definitionKey} from '../model/project';
 import {
   cliCommand,
   findClone,
@@ -17,16 +18,20 @@ import {
   selectWorkflowEnvironment,
   syncActiveEditorReadonly,
   type HostState,
-} from "./projectHost";
+} from './projectHost';
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export async function activate(
+  context: vscode.ExtensionContext,
+): Promise<void> {
   initializeBackend(context);
-  const output = vscode.window.createOutputChannel("Verdog");
-  const problems = vscode.languages.createDiagnosticCollection("verdog");
+  const output = vscode.window.createOutputChannel('Verdog');
+  const problems = vscode.languages.createDiagnosticCollection('verdog');
   context.subscriptions.push(output, problems);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("verdog.newProject", () => newProject(context, cliCommand())),
+    vscode.commands.registerCommand('verdog.newProject', () =>
+      newProject(context, cliCommand()),
+    ),
   );
 
   const root = await findClone();
@@ -50,9 +55,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     verdict: undefined,
     view: undefined,
   };
-  context.subscriptions.push({ dispose: () => host.termination?.dispose() });
+  context.subscriptions.push({dispose: () => host.termination?.dispose()});
 
-  await vscode.commands.executeCommand("setContext", "verdog.preview", preview !== undefined);
+  await vscode.commands.executeCommand(
+    'setContext',
+    'verdog.preview',
+    preview !== undefined,
+  );
   context.subscriptions.push(
     ...registerCatalogue(context, host),
     ...registerCanvas(host, context.extensionUri),
@@ -64,7 +73,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void showCanvas(host);
   }
 
-  if (!hasProject(host)) return;
+  if (!hasProject(host)) {
+    return;
+  }
   context.subscriptions.push(
     vscode.workspace.onDidGrantWorkspaceTrust(() => void refresh(host)),
   );
@@ -76,32 +87,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   const snapshot = await refresh(host);
-  const rootWorkflow = snapshot === undefined
-    ? undefined
-    : definitionIndex(snapshot.project).rootWorkflow;
+  const rootWorkflow =
+    snapshot === undefined
+      ? undefined
+      : definitionIndex(snapshot.project).rootWorkflow;
   if (snapshot !== undefined && rootWorkflow !== undefined) {
     await selectWorkflowEnvironment(host, {
       id: rootWorkflow,
       ownerGraph: snapshot.project.subroutine.id,
-      scope: definitionKey("workflow", rootWorkflow),
+      scope: definitionKey('workflow', rootWorkflow),
     });
   }
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(() => void syncActiveEditorReadonly(host)),
+    vscode.window.onDidChangeActiveTextEditor(
+      () => void syncActiveEditorReadonly(host),
+    ),
   );
 
   const watcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(host.root, "{project.json,external/**/project.json}"),
+    new vscode.RelativePattern(
+      host.root,
+      '{project.json,external/**/project.json}',
+    ),
   );
   watcher.onDidChange(() => void refresh(host));
   watcher.onDidCreate(() => void refresh(host));
   watcher.onDidDelete(() => void refresh(host));
   context.subscriptions.push(watcher, ...registerProjectCommands(host));
 
-  for (const entry of (process.env.VERDOG_COMMANDS ?? "").split(";").filter(Boolean)) {
-    const separator = entry.indexOf(":");
+  for (const entry of (process.env.VERDOG_COMMANDS ?? '')
+    .split(';')
+    .filter(Boolean)) {
+    const separator = entry.indexOf(':');
     const id = (separator < 0 ? entry : entry.slice(0, separator)).trim();
-    const argument = separator < 0 ? undefined : entry.slice(separator + 1).trim();
+    const argument =
+      separator < 0 ? undefined : entry.slice(separator + 1).trim();
     await vscode.commands.executeCommand(
       id,
       argument ? (JSON.parse(argument) as unknown) : undefined,
