@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import type { NodeKind } from "../model/project";
 import type { SubroutineGraph, SubroutineNode } from "./subroutines";
 

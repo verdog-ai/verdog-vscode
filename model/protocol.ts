@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import type { CatalogueListing, CatalogueRecord } from "./catalogue";
 import type { Entity, EntityIdentifier, RemovalImpact } from "./editing";
 import type { ObservationCollection } from "./features";

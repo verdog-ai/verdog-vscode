@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /**
  * The extension reaches the service through the CLI so credentials stay out of webviews and
  * protocol handling has one implementation. Machine-readable commands own stdout; stderr is

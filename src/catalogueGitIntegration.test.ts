@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import assert from "node:assert/strict";
 import { tmpdir } from "node:os";
 import * as path from "node:path";

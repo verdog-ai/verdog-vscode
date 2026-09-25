@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import { graphviz, type GraphvizRenderer } from "d3-graphviz";
 import {
   forwardRef,

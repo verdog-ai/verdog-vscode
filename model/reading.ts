@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /**
  * Reading a graph that somebody may be halfway through typing.
  *

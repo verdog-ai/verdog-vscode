@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /// <reference types="node" />
 
 import assert from "node:assert/strict";
@@ -32,7 +33,7 @@ test("termination presentation distinguishes local and aggregate certification a
   const html = renderToStaticMarkup(createElement(TerminationSection, {
     analysis, onHighlight() {}, renderEntry: (entry) => createElement("li", { key: entry.key }, entry.id),
   }));
-  assert.match(html, /Local graph<\/dt><dd>Certified/);
+  assert.match(html, /This graph<\/dt><dd>Certified/);
   assert.match(html, /Including calls<\/dt><dd>Not certified/);
   assert.match(html, /missing\/main<\/code> — Unavailable/);
   assert.match(html, /iterations↓/);
@@ -51,7 +52,7 @@ test("pending analysis exposes no old regions or actionable highlights", () => {
     analysis: { state: { status: "checking" }, entries: [] },
     onHighlight() {}, renderEntry: () => null,
   }));
-  assert.match(html, /Checking the current graph/);
+  assert.match(html, /The Verdog service is checking the current graph/);
   assert.doesNotMatch(html, /Highlight region|Clear highlight|Residual region/);
   const badge = renderToStaticMarkup(createElement(TerminationBadge, {
     state: { status: "checking" }, onClick() {},

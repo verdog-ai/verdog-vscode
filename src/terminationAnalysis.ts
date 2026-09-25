@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import Ajv from "ajv";
 
 import type { TerminationReport, TerminationState } from "../model/termination";
@@ -133,9 +134,9 @@ export class TerminationAnalysis {
         : report !== undefined && terminationRevision(report) === key
           ? { status: "ready", report }
           : { status: "unavailable", reason: result.code !== 0
-              ? result.stderr.trim() || "The termination analyzer could not run."
+              ? result.stderr.trim() || "Analysis failed. Check the Verdog service connection and sign-in, then refresh the graph."
               : report === undefined
-                ? "The termination analyzer returned an unsupported report."
+                ? "The Verdog analysis service returned an unsupported report."
                 : owners.some((owner) => !Object.hasOwn(report.projects, owner))
                   ? "Some pinned graphs could not be analyzed. Check their schema, package identity, and dependency chain."
                   : "The saved graphs changed while termination was being analyzed." };

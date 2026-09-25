@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Resolve README links without granting a publisher command/file URI authority. */
 export function documentationHref(
   href: string,

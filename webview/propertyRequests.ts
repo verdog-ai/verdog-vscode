@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import type { NavigationPropertyEdit, PropertyRequest, PropertyResult } from "../model/protocol";
 
 /** One pending save per panel; navigation does not cancel an already-started save. */

@@ -3,3 +3,4 @@ dist/
 dist-test/
 dist-test-integration/
 *.vsix
+verdog-vscode-*-source.tar.gz

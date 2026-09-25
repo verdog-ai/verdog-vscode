@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {

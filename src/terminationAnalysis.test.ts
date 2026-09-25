@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
@@ -146,13 +147,22 @@ test("missing analyzed owners explain rejected pins without accepting a partial 
   }
 });
 
-test("mismatched hashes, invalid output, and CLI failures are unavailable, not certificates", async () => {
-  for (const result of [outcome(report({ "": "different" })), { code: 0, stdout: "{}", stderr: "", combined: "" }, { code: 1, stdout: "", stderr: "not installed", combined: "" }]) {
+test("mismatched hashes, invalid output, and CLI or service failures are unavailable, not certificates", async () => {
+  for (const result of [
+    outcome(report({ "": "different" })),
+    { code: 0, stdout: "{}", stderr: "", combined: "" },
+    ...["not installed", "http://127.0.0.1:8765 could not be reached", "not signed in; run `verdog login` first"]
+      .map((stderr) => ({ code: 1, stdout: "", stderr, combined: "" })),
+  ]) {
     const analysis = new TerminationAnalysis(async () => result, () => {}, 1);
-    analysis.update({ "": "root" });
-    await delay(10);
-    assert.equal(analysis.state?.status, "unavailable");
-    analysis.dispose();
+    try {
+      analysis.update({ "": "root" });
+      await delay(10);
+      assert.equal(analysis.state?.status, "unavailable");
+      if (result.code !== 0 && analysis.state?.status === "unavailable") {
+        assert.equal(analysis.state.reason, result.stderr, "show the CLI's service or authentication failure");
+      }
+    } finally { analysis.dispose(); }
   }
 });
 

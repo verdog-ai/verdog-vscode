@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Nominal graph identifiers. JSON still carries ordinary strings. */
 
 declare const identifierKind: unique symbol;

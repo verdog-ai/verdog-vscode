@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Exact Git arguments for resolving the dependency graph of an inspected release. */
 export const SUBMODULE_SYNC_ARGUMENTS = ["submodule", "sync", "--recursive"] as const;
 

@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import * as vscode from "vscode";
 
 import { registerCanvas, showCanvas } from "./canvasView";
@@ -63,6 +64,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   if (!hasProject(host)) return;
+  context.subscriptions.push(
+    vscode.workspace.onDidGrantWorkspaceTrust(() => void refresh(host)),
+  );
   if (host.preview !== undefined) {
     await refresh(host);
     await showCanvas(host);

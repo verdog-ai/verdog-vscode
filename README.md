@@ -3,15 +3,22 @@
 View and edit workflow graphs, check projects, and run or resume workflows from VS Code.
 The canvas sits beside your code, with results in the Runs view.
 
+[Privacy policy](PRIVACY.md) · [Source and build instructions](SOURCE.md)
+
 ## Installation
 
 Requires VS Code **1.106 or newer** and the separately installed
-[Verdog CLI](https://github.com/verdog-ai/verdog). Installing
+`verdog` CLI. Installing
 [verdog-runtime](https://github.com/verdog-ai/verdog-runtime) alone does not install the CLI.
 
 Install a release VSIX with **Extensions: Install from VSIX…**, then open a Verdog project
 folder containing `project.json` and run **Verdog: Show Canvas**. Use **Verdog: New Project**
-to create a project. The extension calls the CLI for checks, execution, and server access.
+to create a project. The extension calls the CLI for generation, analysis, checks, and execution.
+Generation, analysis, Check, and Rename require access to your configured Verdog service.
+**In trusted workspaces, opening or refreshing a graph automatically sends project manifests
+for analysis. Structural canvas edits, New Project, and catalogue imports send declared project
+files for generation; Check and Rename also send declared project files.**
+See the [privacy policy](PRIVACY.md) for automatic requests, storage, and workflow providers.
 
 ## Development and packaging
 
@@ -39,8 +46,11 @@ code --extensionDevelopmentPath=. <a clone>
 2. Commit and publish the source in this repository. Set the release version in `package.json`
    and `package-lock.json`, then push a matching `v<version>` tag.
 3. The `release.yml` workflow tests and packages the extension. Download the `verdog-vscode`
-   artifact from that Actions run and extract the VSIX.
-4. Upload the VSIX through the publisher page using **New extension → Visual Studio Code**,
+   artifact from that Actions run. It contains the VSIX and the matching source archive.
+4. Create a public GitHub Release for the tag and attach **both** files. Check that the source,
+   [privacy policy](PRIVACY.md), dependency source links, and CLI installation instructions
+   are accessible without signing in. A private Actions artifact is not a public source download.
+5. Upload that same VSIX through the publisher page using **New extension → Visual Studio Code**,
    or **Update** for an existing extension.
 
 The workflow builds an artifact; Marketplace upload is manual. See the
@@ -48,9 +58,12 @@ The workflow builds an artifact; Marketplace upload is manual. See the
 
 ## License
 
-Verdog's extension code is licensed under **AGPL-3.0-only**; see [LICENSE](LICENSE).
-Bundled third-party components retain their own licenses, included in the VSIX at
-`dist/THIRD_PARTY_NOTICES.txt`.
+Verdog's extension code is licensed under **AGPL-3.0-only** ([LICENSE](LICENSE)), with
+an [additional permission for linking with Graphviz](LICENSE-EXCEPTION). That permission
+applies to Verdog's code; it does not change Graphviz's or other components' licenses.
+Bundled third-party licenses and notices are included in the VSIX at
+`dist/THIRD_PARTY_NOTICES.txt`. Matching source archives are provided with the
+[releases](https://github.com/verdog-ai/verdog-vscode/releases); see [SOURCE.md](SOURCE.md).
 
 ## Using Verdog
 
@@ -76,8 +89,8 @@ path containing spaces is one array item. The former string-valued `verdog.path`
 | *Show My Access* | what GitHub says you may do in this repository |
 
 There is no *Save Revision* any more. Committing is git's, and VS Code already has the whole
-of git — so each structural canvas edit writes `project.json` and locally refreshes the
-generated tree; *Check* verifies it, and the Source Control panel does the rest.
+of git — so each structural canvas edit writes `project.json` and asks the service to refresh
+the generated tree; *Check* also runs local type checking, and the Source Control panel does the rest.
 Files marked generated in the root `project.json` open read-only. Authored files,
 `project.json`, and external checkouts remain ordinary editable files; the compiler's
 manifest check is still authoritative outside VS Code.
@@ -110,8 +123,8 @@ five, and what is left is the graph — drawing it, navigating from it, and edit
 ## Authoring
 
 The graph is `project.json`, and you edit it as text — by hand or with an agent — then run
-`verdog generate`; canvas edits do that part automatically. Run *Verdog: Check* when you want
-verification. Three things make that a real authoring surface rather than a hex editor:
+`verdog generate`; canvas edits request that service generation automatically. Run *Verdog: Check*
+for service verification and local type checking. Three things make that a real authoring surface rather than a hex editor:
 
 **The schema.** `schemas/project.schema.json` describes the authorable half: required keys per
 node kind, the identifier grammar, and the observations a condition or an effect may carry.
@@ -150,9 +163,13 @@ revision in its store. A dependency is a repository at a commit: whoever pinned 
 that had a `measure` node still has it, and a later commit that gives the name to something
 else cannot reach them. So the record earned nothing and it is gone.
 
-**The compiler.** `verdog generate` projects locally and creates a new node or feature's
-scaffold immediately; `verdog check` has the last word on verification and says exactly what
-is wrong and where. Adding a node is one step: what it receives is whatever you wire into it,
+**The compiler.** `verdog generate` sends declared project files to the service and writes its
+returned scaffolds locally. `verdog check` uses the same service and adds local type checking.
+Automatic termination analysis sends saved project manifests, including pinned dependencies,
+to the service in trusted workspaces. Restricted Mode keeps the canvas readable without sending
+those manifests; granting Workspace Trust starts analysis. If the service or authentication is
+unavailable, analysis shows the failure and generation reports that files could not be refreshed.
+Adding a node is one step: what it receives is whatever you wire into it,
 so there is no contract to reconcile afterwards. Declare what it *emits*, and let the type
 checker tell you which arriving cases its `run_impl` does not handle yet.
 
@@ -163,10 +180,10 @@ own token -- and the answer gates the handles, the toolbar and the delete key. A
 after every check, because a repository token acts as whoever issued it and their access can be
 reduced.
 
-If the question cannot be put, the canvas stays editable. A clone with no remote has nobody to
-ask, which is exactly how the offline loop starts; and refusing to let someone edit their own
-file because a server is unreachable is the wrong failure. The push is the gate that cannot be
-avoided.
+If the question cannot be put, the canvas stays editable in a trusted workspace. A clone with
+no GitHub remote has no repository permissions to ask about. Generation, analysis, and Check
+still require an authenticated service; a failed generation leaves the saved graph available
+for a later retry. GitHub permissions are enforced when pushing.
 
 ## Structure
 

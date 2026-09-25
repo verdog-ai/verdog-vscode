@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Small in-memory projects shared by model tests. */
 
 import { SCHEMA_VERSION } from "../model/project";

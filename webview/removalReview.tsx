@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import "./identityPage.css";
 import "./removalReview.css";
 

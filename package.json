@@ -12,7 +12,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Read-only catalogue inspection remains available in Restricted Mode. Running or editing workflow code requires Workspace Trust.",
+      "description": "Read-only catalogue inspection remains available in Restricted Mode. Editing, running workflows, and automatic service analysis require Workspace Trust.",
       "restrictedConfigurations": [
         "verdog.command"
       ]
@@ -279,7 +279,7 @@
     "url": "https://github.com/verdog-ai/verdog-vscode"
   },
   "license": "AGPL-3.0-only",
-  "homepage": "https://verdog.ai",
+  "homepage": "https://github.com/verdog-ai/verdog-vscode#readme",
   "bugs": {
     "url": "https://github.com/verdog-ai/verdog-vscode/issues"
   },
@@ -291,7 +291,10 @@
     "media/icon.png",
     "schemas/*.json",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "LICENSE-EXCEPTION",
+    "PRIVACY.md",
+    "SOURCE.md"
   ],
   "icon": "media/icon.png"
 }

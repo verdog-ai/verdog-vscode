@@ -1,0 +1,35 @@
+Verdog VS Code extension — Graphviz linking permission
+Additional permission under GNU Affero General Public License version 3, section 7
+
+This permission applies to the Verdog VS Code extension code whose copyright
+holders grant it (the "Verdog Code"). It supplements, and does not replace,
+the GNU Affero General Public License version 3 (GNU AGPL), reproduced in
+LICENSE.
+
+For this permission, "Graphviz Components" means Graphviz 15.1.0, including
+the constituent code distributed with it, and its WebAssembly distribution
+through @hpcc-js/wasm 2.35.0 and @hpcc-js/wasm-graphviz 1.28.0, including
+the HPCC wrappers and the third-party components incorporated in that
+WebAssembly distribution. This includes the Graphviz code identified under
+EPL-2.0, the lib/vpsc code bearing CPL-1.0 notices, and the Expat and fzstd
+components. Modified versions of these components are also covered by this
+permission when used under their applicable upstream licenses.
+
+The copyright holders of the Verdog Code grant you additional permission
+to link or combine the Verdog Code, or modified versions of it, with the
+Graphviz Components and to convey the resulting combination. For this
+combination, the Graphviz Components may remain under their own licenses;
+they need not be relicensed under the GNU AGPL.
+
+All GNU AGPL requirements continue to apply to the Verdog Code, including
+its Corresponding Source requirements and, when applicable, section 13.
+When conveying a non-source combination, provide the Corresponding Source
+for the Verdog Code as required by the GNU AGPL and make the source of the
+Graphviz Components available as required by their respective licenses.
+
+This permission does not waive or replace any condition of a Graphviz
+Component's license, including its copyright, attribution, license-notice,
+and source-availability requirements. It grants no rights in third-party
+code beyond those granted by its copyright holders. It does not permit
+relicensing the Verdog Code under a non-AGPL license, and it grants no
+exception for combining the Verdog Code with unrelated software.

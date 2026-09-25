@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /**
  * Stage-two materialisation of an immutable catalogue release.
  *

@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /**
  * Editing the graph: what a canvas gesture does to `project.json`.
  *
@@ -1542,7 +1543,7 @@ export function setWorkflowResources(
  * `name` is prose for a reader -- "Profile compile time" -- and nothing refers to it, so this
  * is a plain edit. `id` is the identifier every generated module path and every edge endpoint
  * is built from, and changing that is `verdog rename`: it moves a directory and rewrites the
- * references. Keeping the two apart is what lets the label be fixed without a service call.
+ * references. A display-label edit needs generation but not this source-reference rewrite.
  *
  * A feature's prose lives in `label`, not `name`, which is why the field is chosen by kind.
  */

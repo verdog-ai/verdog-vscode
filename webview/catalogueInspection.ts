@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import type { CatalogueInspection } from "../model/catalogue";
 
 /** Keep the exact current inspection outcome visible beside its action. */

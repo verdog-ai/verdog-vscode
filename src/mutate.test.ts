@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /**
  * The graph edits a canvas gesture makes, against the project we ship.
  *

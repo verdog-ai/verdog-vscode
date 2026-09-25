@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /**
  * Every editing gesture, aimed at a workflow this project does not define.
  *

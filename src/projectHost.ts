@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 
@@ -489,7 +490,7 @@ export async function editSubroutine(
   return true;
 }
 
-/** Project graph edits locally; verification remains the explicit `check` command. */
+/** Refresh generated files through the service; `check` also runs local type checking. */
 export async function generate(host: OpenHost, root: string): Promise<boolean> {
   const result = await runVerdogCommand(root, ["generate"], {
     announce: false,
@@ -628,11 +629,17 @@ export async function refresh(host: OpenHost): Promise<ProjectSnapshot | undefin
       publishSnapshot(host);
     },
   );
-  const termination = host.termination.update(Object.fromEntries([
-    ["", snapshot.graph_hash],
-    ...Object.entries(snapshot.pinned).map(([owner, project]) => [owner, graphHash(project)]),
-  ]));
-  if (termination !== undefined) snapshot.termination = termination;
+  if (vscode.workspace.isTrusted) {
+    const termination = host.termination.update(Object.fromEntries([
+      ["", snapshot.graph_hash],
+      ...Object.entries(snapshot.pinned).map(([owner, project]) => [owner, graphHash(project)]),
+    ]));
+    if (termination !== undefined) snapshot.termination = termination;
+  } else {
+    host.termination.unavailable(
+      "Trust this workspace to send project manifests to the Verdog service for analysis.",
+    );
+  }
   if (host.preview !== undefined && host.preview.workflow) {
     const definition = definitionIn(host.snapshot.project, "workflow", host.preview.workflow);
     if (definition?.target !== undefined) {

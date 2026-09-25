@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Clone reading, path safety, and CLI verdict composition. */
 
 import assert from "node:assert/strict";

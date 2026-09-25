@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Compare the GitHub URL forms produced by Git and its `insteadOf` configuration. */
 export function githubRemoteRepository(value: string): string | undefined {
   const remote = value.trim().replace(/\/$/, "").replace(/\.git$/i, "");

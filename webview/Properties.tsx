@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import { useEffect, useState } from "react";
 
 import { defaultAgentInvokerOptions } from "../model/agents";

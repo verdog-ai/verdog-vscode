@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Python keywords, which Verdog identifiers and package components may not use. */
 export const KEYWORDS: ReadonlySet<string> = new Set([
   "_", "and", "as", "assert", "async", "await", "break", "case", "class", "continue",

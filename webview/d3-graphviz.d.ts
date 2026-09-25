@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 declare module "d3-graphviz" {
   import type { BaseType, Selection } from "d3-selection";
 

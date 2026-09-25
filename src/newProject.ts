@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /**
  * Starting a project without leaving the editor.
  *
@@ -61,7 +62,8 @@ export async function newProject(
   const packageName = await vscode.window.showInputBox({
     prompt:
       "The Python package every module in this project is rooted at. " +
-      "Use `space.name`, so two authors' projects of the same name can sit side by side.",
+      "Use `space.name`, so two authors' projects of the same name can sit side by side. " +
+      "Generation sends the new project's files to your configured Verdog service.",
     placeHolder: `space.${suggested}`,
     title: `New project "${name.trim()}"`,
     validateInput: packageProblem,
@@ -75,7 +77,8 @@ export async function newProject(
   );
   if (result.code !== 0) {
     void vscode.window.showErrorMessage(
-      `Verdog: the project could not be created. ${result.combined.trim()}`,
+      `Verdog: project setup did not complete. ${result.combined.trim()} ` +
+        `If project files were created, open ${folder} and retry \`verdog generate\` after resolving the error.`,
     );
     return;
   }

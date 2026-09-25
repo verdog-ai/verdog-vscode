@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** VS Code policy around invoking the platform-neutral Verdog CLI process. */
 
 import * as vscode from "vscode";

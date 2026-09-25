@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Versioned, platform-neutral contracts for local run history. */
 
 import Ajv from "ajv";

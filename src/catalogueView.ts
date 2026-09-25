@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import * as path from "node:path";
 import { constants as fsConstants } from "node:fs";
 import { access as accessFile } from "node:fs/promises";

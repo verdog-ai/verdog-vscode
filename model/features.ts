@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** The feature vocabulary shared by authoring, snapshots, and the canvas. */
 
 import type { FeatureId } from "./identifiers";

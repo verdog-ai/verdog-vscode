@@ -1,6 +1,8 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import assert from "node:assert/strict";
 import * as path from "node:path";
 import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { build } from "esbuild";
 import type * as vscode from "vscode";
 
@@ -290,6 +292,45 @@ test("only the latest refresh publishes a snapshot or read failure", async () =>
   assert.deepEqual(errors, []);
   assert.equal(posted.length, 2);
   state.termination?.dispose();
+});
+
+test("automatic service analysis waits for Workspace Trust", async () => {
+  let trusted = false;
+  let calls = 0;
+  const { refresh } = await load<typeof import("./projectHost")>("projectHost.ts", {
+    vscode: {
+      commands: {}, window: {},
+      workspace: { get isTrusted() { return trusted; } },
+    },
+    "./clone": { readClone: async () => snapshot("graph"), projectFileReadonly() {}, subroutineFile() {} },
+    "./verdogCommand": {
+      cliCommand: () => ["verdog"],
+      runVerdogCommand: async (_root: string, arguments_: string[]) => {
+        assert.deepEqual(arguments_, ["analyze", "--json"]);
+        ++calls;
+        return {
+          code: 0, combined: "", stderr: "",
+          stdout: JSON.stringify({ projects: { "": "graph" }, definitions: {} }),
+        };
+      },
+    },
+  });
+  const state = host();
+  try {
+    await refresh(state);
+    assert.equal(state.snapshot?.editable, false);
+    assert.equal(state.snapshot?.termination?.status, "unavailable");
+    if (state.snapshot?.termination?.status === "unavailable") {
+      assert.match(state.snapshot.termination.reason, /Trust this workspace.*send project manifests/);
+    }
+    await delay(300);
+    assert.equal(calls, 0, "Restricted Mode must not upload project manifests");
+    trusted = true;
+    await refresh(state);
+    await delay(300);
+    assert.equal(calls, 1);
+    assert.equal(state.snapshot?.termination?.status, "ready");
+  } finally { state.termination?.dispose(); }
 });
 
 test("workspace trust centrally gates editing and executable workflow verbs", async () => {

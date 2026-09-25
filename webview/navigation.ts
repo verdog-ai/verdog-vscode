@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import { agentProfiles, agentSessions } from "../model/agents";
 import { bindingSummary, resolveParameter } from "../model/bindings";
 import type { DocumentLink, DocumentedEntity, EntityDocumentRefs } from "../model/documents";

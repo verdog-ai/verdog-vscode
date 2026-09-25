@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 // Two runtime targets: the extension host is Node; the canvas and catalogue are browsers.
 import { build } from "esbuild";
 import { readFile, readdir, rm, writeFile } from "node:fs/promises";

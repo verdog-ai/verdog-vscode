@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Where a profile or session parameter ends up: the concrete resources bound to it. */
 
 import type { AgentProfileId, AgentSessionId, GraphId } from "./identifiers";

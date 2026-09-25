@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /**
  * Reading a published workflow by checking it out, read-only, in its own window.
  *

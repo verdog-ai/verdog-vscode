@@ -36,9 +36,14 @@ jobs:
       - name: Package extension
         run: npm run package
 
-      - name: Upload VSIX
+      - name: Archive matching source
+        run: git archive --format=tar.gz --prefix="verdog-vscode-${GITHUB_REF_NAME}/" --output="verdog-vscode-${GITHUB_REF_NAME}-source.tar.gz" HEAD
+
+      - name: Upload VSIX and source
         uses: actions/upload-artifact@v4
         with:
           name: verdog-vscode
-          path: "*.vsix"
+          path: |
+            *.vsix
+            verdog-vscode-*-source.tar.gz
           if-no-files-found: error

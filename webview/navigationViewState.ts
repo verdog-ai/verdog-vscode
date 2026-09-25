@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 type ViewState = {
   disclosures: Map<string, boolean>;
   focus?: string;

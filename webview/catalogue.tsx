@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Discovery sidebar and the full-editor scholarly record for a published workflow. */
 
 import "./catalogue.css";

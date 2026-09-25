@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import type { ReactNode } from "react";
 
 import type { NavigationEntry, TerminationNavigation } from "../model/protocol";
@@ -18,8 +19,8 @@ export const EDGE_TERMINATION_BADGE: Record<EdgeTerminationDisplayStatus, { icon
   cleared: { icon: "✓", label: "Cleared", description: "No transition of this edge remains in a residual abstract cycle." },
   remaining: { icon: "↻", label: "Remaining", description: "At least one transition of this edge remains in a residual abstract cycle; this does not prove nontermination." },
   unreachable: { icon: "—", label: "Unreachable", description: "This edge is unreachable in the analyzed qualitative policy." },
-  checking: { icon: "…", label: "Checking", description: "Structural termination is being checked for the current graph." },
-  unavailable: { icon: "—", label: "Unavailable", description: "No current local termination result is available for this edge." },
+  checking: { icon: "…", label: "Checking", description: "The Verdog service is checking structural termination for the current graph." },
+  unavailable: { icon: "—", label: "Unavailable", description: "No current termination result is available for this edge." },
 };
 
 export function EdgeTerminationLegend() {
@@ -126,7 +127,7 @@ export function TerminationSection({ analysis, onHighlight, renderEntry }: {
     {state.status === "ready" ? <>
       <p>{state.definition.reason}</p>
       <dl className="termination-summary">
-        <div><dt>Local graph</dt><dd>{TERMINATION_LABEL[state.definition.local_status]}</dd></div>
+        <div><dt>This graph</dt><dd>{TERMINATION_LABEL[state.definition.local_status]}</dd></div>
         <div><dt>Including calls</dt><dd>{TERMINATION_LABEL[state.definition.status]}</dd></div>
         <div><dt>Qualitative policy</dt><dd>{state.definition.memory_states.toLocaleString()} control states · {state.definition.rules.toLocaleString()} rules</dd></div>
       </dl>
@@ -161,7 +162,7 @@ export function TerminationSection({ analysis, onHighlight, renderEntry }: {
         </details>)}
         {region.witnesses.length > 0 && <Witnesses disclosure={`termination/region:${region.id}`} entries={entries} renderEntry={renderEntry} witnesses={region.witnesses} />}
       </details>)}
-    </> : <p role="status">{state.status === "checking" ? "Checking the current graph and its reachable calls…" : state.reason}</p>}
+    </> : <p role="status">{state.status === "checking" ? "The Verdog service is checking the current graph and its reachable calls…" : state.reason}</p>}
     <p className="status-note">Conservative qualitative analysis of graph traversal, not authored Python termination or successful execution.</p>
   </section>;
 }

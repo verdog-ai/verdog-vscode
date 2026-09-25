@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /**
  * Completion for `project.json`, so the graph can be written without memorising it.
  *

@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Resource contracts shared by entity property pages and the mutation boundary. */
 
 import { agentProfiles, agentSessions, type AgentSession } from "./agents";

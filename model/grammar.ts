@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Fault-tolerant reads of the project document while an author is typing it. */
 
 import {

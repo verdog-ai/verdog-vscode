@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 // The tests import the project model, so they need the same bundling the webview does.
 // Bundled to CJS-free ESM so `node --test` can run them directly.
 import { rm } from "node:fs/promises";

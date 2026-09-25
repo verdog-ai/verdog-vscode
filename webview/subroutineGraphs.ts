@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Turn the shared project snapshot into the graphs the canvas draws. */
 
 import { definitionDocumentPaths, type DocumentLink } from "../model/documents";

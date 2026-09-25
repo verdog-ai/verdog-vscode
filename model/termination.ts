@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 /** Advisory native analysis; separate from compiler diagnostics and execution. */
 export type TerminationStatus = "certified" | "not_certified" | "unavailable";
 export type TerminationEdgeStatus = "cleared" | "remaining" | "unreachable";

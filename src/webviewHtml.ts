@@ -1,3 +1,4 @@
+// AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION.
 import { randomBytes } from "node:crypto";
 
 import * as vscode from "vscode";
