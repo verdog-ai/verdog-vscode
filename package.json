@@ -296,7 +296,7 @@
     "url": "https://github.com/verdog-ai/verdog-vscode"
   },
   "license": "AGPL-3.0-only",
-  "homepage": "https://github.com/verdog-ai/verdog-vscode#readme",
+  "homepage": "https://drexlerd.github.io/verdog-website/",
   "bugs": {
     "url": "https://github.com/verdog-ai/verdog-vscode/issues"
   },
@@ -306,6 +306,7 @@
     "dist/THIRD_PARTY_NOTICES.txt",
     "media/*.svg",
     "media/icon.png",
+    "media/running-example.png",
     "schemas/*.json",
     "README.md",
     "LICENSE",

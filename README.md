@@ -1,57 +1,95 @@
 # Verdog for VS Code
 
-View and edit workflow graphs, check projects, and run or resume workflows from VS Code.
-The canvas sits beside your code, with results in the Runs view.
+Build agent workflows as graphs, implement their steps in Python, and run them locally.
+Keep your workflow source and prompts in your own Git repository.
 
-[Privacy policy](PRIVACY.md) · [Source and build instructions](SOURCE.md)
+**[Website and documentation](https://drexlerd.github.io/verdog-website/)** ·
+[Get started](https://drexlerd.github.io/verdog-website/getting-started.html) ·
+[Try the running example](https://drexlerd.github.io/verdog-website/running-example.html)
 
-## Installation
+[![Countdown workflow in Verdog's VS Code canvas](media/running-example.png)](https://drexlerd.github.io/verdog-website/running-example.html)
 
-Requires VS Code **1.106 or newer** and Python **3.12 or newer**. Install the
-`verdog` CLI from [verdog-runtime](https://pypi.org/project/verdog-runtime/)
-**0.1.1 or newer**, using [uv](https://docs.astral.sh/uv/getting-started/installation/):
+*Countdown: an agent proposes the next integer, Python validates it, and a decreasing
+counter controls the loop.*
+
+## What you can do
+
+- **Compose workflows visually.** Connect agent calls, Python steps, and reusable
+  subroutines. Add conditions and effects to express how execution progresses.
+- **Work beside your code.** Navigate from the canvas to Python implementations.
+  Edit your prompts alongside them, and edit `project.json` with completion and undo.
+- **Check before running.** Validate graph connections and Python types, see diagnostics
+  in the Problems panel, and inspect structural termination analysis.
+- **Run and recover.** Execute locally, inspect outputs and logs in the Runs view, resume
+  interrupted runs, restart a run, or fork from a saved checkpoint.
+- **Share and reuse.** Browse published workflows, inspect their source, and import
+  releases pinned to Git commits. Publish workflows from your own repository.
+
+Structural termination analysis uses the graph's declared feature conditions and effects.
+A certificate does not prove that arbitrary Python code or provider calls terminate.
+The [running example](https://drexlerd.github.io/verdog-website/running-example.html)
+shows a certified loop and the Python validation behind it.
+
+## Get started
+
+Requires **VS Code 1.106+**, **Python 3.12+**, Git, and the `verdog` CLI from
+[`verdog-runtime`](https://pypi.org/project/verdog-runtime/) **0.1.1+**.
+Install or update the CLI with [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```sh
-uv tool install 'verdog-runtime>=0.1.1'
+uv tool install --upgrade 'verdog-runtime>=0.1.1'
 verdog --help
 ```
 
-The package contains the client CLI and local runtime. Compiler operations use the
-hosted backend; no backend installation is required.
+Install **Verdog** from VS Code's Extensions view, then:
 
-Install a release VSIX with **Extensions: Install from VSIX…**, then open a Verdog project
-folder containing `project.json` and run **Verdog: Show Canvas**. Use **Verdog: New Project**
-to create a project. The extension calls the CLI for generation, analysis, checks, and execution.
-Generation, analysis, Check, and Rename use your configured Verdog service anonymously;
-GitHub sign-in is not required for editing or compiler operations.
-**In trusted workspaces, opening or refreshing a graph automatically sends project manifests
-for analysis. Structural canvas edits, New Project, and catalogue imports send declared project
-files for generation; Check and Rename also send declared project files.**
-See the [privacy policy](PRIVACY.md) for automatic requests, storage, and workflow providers.
+1. Run **Verdog: New Project** from the Command Palette, or open an existing project
+   containing `project.json`.
+2. Run `verdog sync` in the project's terminal to prepare its Python environments.
+3. Use **Verdog: Show Canvas**, **Verdog: Check**, and **Verdog: Run Workflow** to edit,
+   check, and run. The initial blank workflow succeeds without an agent request.
 
-## Backend and sign-in
+For a complete agent workflow, follow the
+[Countdown walkthrough](https://drexlerd.github.io/verdog-website/running-example.html).
+Agent nodes need the provider tools and authentication selected by their
+[profile](https://drexlerd.github.io/verdog-website/profile.html).
 
-The default backend is **`https://157.180.79.112`**. To use another deployment, set
-`verdog.backendOrigin` in **User Settings**, for example:
+## Service, sign-in, and privacy
 
-```json
-{
-  "verdog.backendOrigin": "https://157.180.79.112"
-}
-```
+Workflow execution is local. Generation and structural analysis use the hosted backend;
+no backend installation or GitHub sign-in is required for compiler operations.
+Catalogue operations use VS Code's built-in GitHub sign-in. Git cloning uses your Git
+credentials separately.
 
-Use an origin without `/api/v1`. HTTPS is required except for loopback addresses;
-`http://127.0.0.1:18765` can be used for an SSH tunnel. Workspace settings and project files
-cannot choose where the extension sends sign-in tokens. Choose a backend you trust:
-compiler requests send manifests and, for generation, checking, and renaming, declared source files.
+**In trusted workspaces, opening or refreshing a graph sends project manifests for
+analysis. Structural canvas edits, New Project, and catalogue imports send declared
+project files for generation; Check and Rename also send declared project files.**
+Restricted Mode disables automatic analysis. Running a workflow executes its code locally
+and may contact its configured agent provider. See the [privacy policy](PRIVACY.md).
 
-Catalogue browsing, publishing, and importing use VS Code's built-in **GitHub sign-in**.
-The extension requests `read:user` and exchanges that GitHub token with the configured backend
-for a Verdog session stored in VS Code **SecretStorage**. This scope cannot access private
-catalogue repositories; the extension does not request broad `repo` access. Git cloning uses
-your Git credentials separately. No GitHub App secrets are included in the extension.
+<details>
+<summary>Backend and CLI configuration</summary>
 
-## Development and packaging
+The default backend is `https://157.180.79.112`. To use another deployment, set
+`verdog.backendOrigin` in **User Settings** to its origin, without `/api/v1`.
+HTTPS is required except for loopback addresses such as `http://127.0.0.1:18765`.
+Workspace settings and project files cannot choose where sign-in tokens are sent.
+
+GitHub sign-in requests `read:user`, which does not grant private repository access.
+The configured backend exchanges that token for a Verdog session held in VS Code's
+SecretStorage. No GitHub App secrets are included in the extension.
+
+If the CLI is not on your `PATH`, set `verdog.command` to an argument array. An
+executable path containing spaces must be one array item.
+
+</details>
+
+## Development and releases
+
+[Source and build inputs](SOURCE.md) · [Code quality guide](CODE_QUALITY.md)
+
+<details>
+<summary>Build, test, and package</summary>
 
 Use Node.js 22 or newer (`nvm use` if available):
 
@@ -60,18 +98,25 @@ npm ci
 npm run check
 npm test
 npm run package
-code --install-extension verdog-vscode-0.0.3.vsix
 ```
 
-The [quality guide](CODE_QUALITY.md) records the style rules, checks, and measured
-refactors. Packaging type-checks and builds the extension first. To launch a development window:
+Install the resulting `.vsix` with **Extensions: Install from VSIX…**.
+Packaging type-checks and builds the extension first. To open a development window:
 
 ```sh
 npm run build
-code --extensionDevelopmentPath=. <a clone>
+code --extensionDevelopmentPath=. /path/to/project
 ```
 
-## Publishing
+`npm test` needs no sibling repositories. With `../verdog-runtime` checked out,
+`npm run test:integration` checks the run-history contract against the Python producers.
+The extension host lives in `src/`, platform-neutral graph and editing logic in `model/`,
+and the canvas and catalogue webviews in `webview/`.
+
+</details>
+
+<details>
+<summary>Publish a release</summary>
 
 Pushing a `v<version>` tag runs [release.yml](.github/workflows/release.yml): tests,
 type checking, packaging, a public GitHub Release containing the VSIX and matching source,
@@ -100,16 +145,8 @@ One-time Marketplace setup:
    Until it is authorized, **Publish existing VSIX** will fail; authorize the identity
    and select **Re-run failed jobs**.
 
-Commit the release changes, then publish the first version with:
-
-```sh
-git push origin main
-git tag v0.0.1
-git push origin v0.0.1
-```
-
-Use a new version and matching tag for subsequent releases. If Marketplace authentication
-fails, configure it and select **Re-run failed jobs**: the public GitHub Release remains
+Commit and push the release changes, then push a new `v<version>` tag matching
+`package.json`. If Marketplace authentication fails, configure it and select **Re-run failed jobs**: the public GitHub Release remains
 available and the publishing job reuses the packaged artifact. An already published
 Marketplace version is skipped on retry. Nothing is uploaded to Marketplace until
 its identity has been configured and authorized.
@@ -117,6 +154,8 @@ its identity has been configured and authorized.
 The [publishing constraints](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#publishing-extensions)
 apply to the Marketplace icon, badges, and README/CHANGELOG images. The icon is a PNG;
 SVGs used by VS Code's view containers are permitted. Packaging runs `vsce`'s validation.
+
+</details>
 
 ## License
 
@@ -126,137 +165,3 @@ applies to Verdog's code; it does not change Graphviz's or other components' lic
 Bundled third-party licenses and notices are included in the VSIX at
 `dist/THIRD_PARTY_NOTICES.txt`. Matching source archives are provided with the
 [releases](https://github.com/verdog-ai/verdog-vscode/releases); see [SOURCE.md](SOURCE.md).
-
-## Using Verdog
-
-*New Project* is the one command that works with no project open — it is registered before the
-extension looks for a clone, because looking for one is the thing it exists to make
-unnecessary. It shells `verdog init` rather than writing the graph itself: the module paths in
-a blank project are templated from the package name and the compiler checks them exactly, so a
-second template here would be a second thing to keep in step.
-
-The canvas docks in the secondary side bar, so the window reads explorer | code | canvas. If
-`verdog` is not on your `PATH`, set `verdog.command` to an argument array. An executable
-path containing spaces is one array item. The former string-valued `verdog.path` setting is no longer read.
-
-| command | what it does |
-|---|---|
-| *New Project* | asks where and what to call it, then runs `verdog init` and opens the canvas |
-| *Show Canvas* | reveals the graph |
-| *Add Node*, *Add Feature Declaration* | asks for a kind and a name, then writes it |
-| *Delete Node, Edge or Feature* | pick from a list; a node takes its edges with it |
-| *Connect Two Nodes*, *Constrain an Edge* | what the canvas gestures do, from the palette |
-| *Check*, *Run Workflow* | the CLI |
-| *Resume Run*, *Restart Run*, *Fork Run* | continues a committed local run, restarts its launch, or branches a selected checkpoint from the Runs view |
-| *Show My Access* | catalogue permissions for the current repository; these do not restrict editing |
-
-There is no *Save Revision* any more. Committing is git's, and VS Code already has the whole
-of git — so each structural canvas edit writes `project.json` and asks the service to refresh
-the generated tree; *Check* also runs local type checking, and the Source Control panel does the rest.
-Files marked generated in the root `project.json` open read-only. Authored files,
-`project.json`, and external checkouts remain ordinary editable files; the compiler's
-manifest check is still authoritative outside VS Code.
-
-Each takes optional arguments, so a keybinding — or a test — can skip the prompts:
-`{"command": "verdog.addNode", "args": {"kind": "python", "name": "Measure"}}`.
-
-`npm test` checks the clone reader, project model, and verdict parser directly, with no
-sibling repositories required. `npm run typecheck` and `npm run build` check and build the
-extension. Run `npm run test:integration` with `../verdog-runtime` checked out alongside
-this repository to check the run-history schema against the Python producers.
-`VERDOG_COMMANDS=verdog.openCanvas,verdog.check` runs commands on activation, which is the
-only way a smoke test can invoke one.
-
-## What it deliberately does not have
-
-An editor, a file tree, a diagnostics list, a theme, a revision browser. VS Code has all
-five, and what is left is the graph — drawing it, navigating from it, and editing it.
-
-| the browser IDE built | here it is |
-|---|---|
-| Monaco, tabs, dirty state | native editors, with the real Python language server |
-| a file explorer | the workspace, which *is* the clone |
-| a diagnostics list | the Problems panel, from `verdog check --json` |
-| a design system | `--vscode-*` custom properties |
-| GitHub sign-in and session storage | VS Code authentication and SecretStorage |
-| revision history | `git log`, the Timeline view, and GitHub |
-| commit, push, branch, merge | the Source Control panel |
-
-## Authoring
-
-The graph is `project.json`, and you edit it as text — by hand or with an agent — then run
-`verdog generate`; canvas edits request that service generation automatically. Run *Verdog: Check*
-for service verification and local type checking. Three things make that a real authoring surface rather than a hex editor:
-
-**The schema.** `schemas/project.schema.json` describes the authorable half: required keys per
-node kind, the identifier grammar, and the observations a condition or an effect may carry.
-The core repository's `integration/tests/test_project_schema.py` checks this schema against
-the compiler model when the two repositories are checked out alongside each other. Run it
-from `../verdog` with `uv run pytest integration/tests/test_project_schema.py`.
-
-**Completion that knows the project** (`model/grammar.ts`, `model/snippets.ts`,
-`src/authoring.ts`). Inside `nodes`,
-`features` or `edges`, Ctrl+Space offers an authorable skeleton; generated module paths are no
-longer stored in the graph. On `feature_id` it offers the enclosing workflow's own features
-with their kinds. On `observation` it offers only what is legal for *that* feature's kind on
-*that* side of the edge: four sets no schema can express, because the answer depends on another
-part of the document. Explicit effects are offered only when the edge starts at a feature node.
-
-| | boolean | integer / float | enum |
-|---|---|---|---|
-| `conditions` | `positive`, `negative` | `equal_zero`, `greater_zero` | `equal` with a declared `value` |
-| `effects` | `positive`, `negative`, `unchanged`, `unconstrained` | `increases`, `decreases`, `unchanged`, `unconstrained` | `equal` with a declared `value`, or `unconstrained` |
-
-A bounded integer whose feature node proposes a lower value and whose outgoing effect verifies
-**decreases** is the usual termination witness; `unconstrained` gives up that proof.
-
-**The canvas.** Drag from a node's handle to connect two, press Delete to remove one, and use
-the toolbar to add a node or a feature declaration or to constrain the selected edge. DOT always places
-the nodes and routes their edges together; Tidy recomputes that layout without changing the
-viewport. Authoring gestures write `project.json` — the same file an agent edits — through a
-`WorkspaceEdit`, so Ctrl+Z in the JSON editor undoes a canvas action and an unsaved hand edit
-is never clobbered. The extension enforces cheap authoring invariants (a free id, the right
-module path, no dangling reference after a delete, effects only after feature nodes); the
-compiler owns complete validation.
-
-Deleting frees the name. There used to be a `tombstones` record keeping a retired identifier
-retired, and it protected something real when Verdog owned the history and a dependency was a
-revision in its store. A dependency is a repository at a commit: whoever pinned the release
-that had a `measure` node still has it, and a later commit that gives the name to something
-else cannot reach them. So the record earned nothing and it is gone.
-
-**The compiler.** `verdog generate` sends declared project files to the service and writes its
-returned scaffolds locally. `verdog check` uses the same service and adds local type checking.
-Automatic termination analysis sends saved project manifests, including pinned dependencies,
-to the service in trusted workspaces. Restricted Mode keeps the canvas readable without sending
-those manifests; granting Workspace Trust starts analysis. If the service is unavailable, analysis shows the failure and generation reports that files
-could not be refreshed.
-Adding a node is one step: what it receives is whatever you wire into it,
-so there is no contract to reconcile afterwards. Declare what it *emits*, and let the type
-checker tell you which arriving cases its `run_impl` does not handle yet.
-
-## Permissions
-
-Local graph editing and compiler operations require Workspace Trust, not catalogue permissions,
-a GitHub session, or a seat. Inspection checkouts remain read-only. **Show My Access** explicitly
-asks the service for catalogue permissions on the current repository; opening or checking a
-project does not make that request. GitHub permissions are enforced when pushing or publishing.
-
-## Structure
-
-- `src/clone.ts` — reads `project.json` into the shared snapshot and derives entity document
-  paths from convention, which makes the canvas navigable with no service running.
-- `src/cli.ts` — spawns `verdog`, and reads one `check --json` verdict. No parsing of prose.
-- `src/graph.ts` — the graph's content hash, so "stale" is answerable with no round trip. A
-  client-side mirror of the native compiler's graph hash, with direct semantic tests in
-  `graph.test.ts`.
-- `src/extension.ts` — activation and wiring only. `projectHost.ts` owns project state and CLI
-  results; `projectActions.ts` owns authoring commands; `canvasView.ts` and `catalogueView.ts`
-  own their VS Code views.
-- `model/` — the platform-neutral project, feature, editing, snapshot, catalogue, and host ↔
-  webview contracts, including the graph grammar. It imports neither VS Code, Node, React nor
-  Graphviz. `src/authoring.ts` is the thin adapter that turns that grammar into completions.
-- `webview/` — the React toolbar and inspectors around one Graphviz canvas adapter.
-
-The build checks its own output for the two failures that are silent at build time and blank
-at runtime: a second copy of React, and a stray classic-JSX `React.createElement`.
