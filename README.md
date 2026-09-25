@@ -40,21 +40,50 @@ code --extensionDevelopmentPath=. <a clone>
 
 ## Publishing
 
-1. Create a publisher at [Visual Studio Marketplace](https://marketplace.visualstudio.com/manage).
-   Its ID must match `publisher` in `package.json` (currently `verdog`). If that ID is unavailable,
-   update the manifest before packaging.
-2. Commit and publish the source in this repository. Set the release version in `package.json`
-   and `package-lock.json`, then push a matching `v<version>` tag.
-3. The `release.yml` workflow tests and packages the extension. Download the `verdog-vscode`
-   artifact from that Actions run. It contains the VSIX and the matching source archive.
-4. Create a public GitHub Release for the tag and attach **both** files. Check that the source,
-   [privacy policy](PRIVACY.md), dependency source links, and CLI installation instructions
-   are accessible without signing in. A private Actions artifact is not a public source download.
-5. Upload that same VSIX through the publisher page using **New extension → Visual Studio Code**,
-   or **Update** for an existing extension.
+Pushing a `v<version>` tag runs [release.yml](.github/workflows/release.yml): tests,
+type checking, packaging, a public GitHub Release containing the VSIX and matching source,
+then Marketplace publication of **that same VSIX** under publisher `verdog`.
+The tag must match the version in `package.json`; update `package-lock.json` with it.
+README links in the package are pinned to the release tag.
 
-The workflow builds an artifact; Marketplace upload is manual. See the
-[VS Code publishing guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension).
+One-time Marketplace setup:
+
+1. Create a Microsoft Entra publishing identity, following the
+   [Marketplace authentication guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#secure-automated-publishing-to-visual-studio-marketplace).
+2. Create a GitHub environment named `marketplace` in this repository, allowing deployment
+   from tags matching `v*`. Set its variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`
+   to the publishing identity's application/client ID and tenant ID.
+3. Configure the identity's
+   [GitHub federated credential](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-azure):
+   issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`,
+   subject `repo:verdog-ai@319109192/verdog-vscode@1387501038:environment:marketplace`.
+   This repository uses GitHub's [immutable subject format](https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims).
+   If its OIDC settings are customized, use the exact `subject claim` printed by the
+   authentication step instead. No stored PAT or client secret is required.
+4. On the first tag run, copy the ID printed by **Show Marketplace identity**. In
+   [publisher management](https://marketplace.visualstudio.com/manage/publishers/verdog),
+   open **Members**, add that ID, and grant **Contributor**. This is the publishing
+   identity's Marketplace profile ID, not its Entra application ID or your personal ID.
+   Until it is authorized, **Publish existing VSIX** will fail; authorize the identity
+   and select **Re-run failed jobs**.
+
+Commit the release changes, then publish the first version with:
+
+```sh
+git push origin main
+git tag v0.0.1
+git push origin v0.0.1
+```
+
+Use a new version and matching tag for subsequent releases. If Marketplace authentication
+fails, configure it and select **Re-run failed jobs**: the public GitHub Release remains
+available and the publishing job reuses the packaged artifact. An already published
+Marketplace version is skipped on retry. Nothing is uploaded to Marketplace until
+its identity has been configured and authorized.
+
+The [publishing constraints](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#publishing-extensions)
+apply to the Marketplace icon, badges, and README/CHANGELOG images. The icon is a PNG;
+SVGs used by VS Code's view containers are permitted. Packaging runs `vsce`'s validation.
 
 ## License
 
