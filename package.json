@@ -2,7 +2,7 @@
   "name": "verdog-vscode",
   "displayName": "Verdog",
   "description": "Author a Verdog project from the clone on disk: the workflow canvas, check and run.",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "private": true,
   "publisher": "verdog",
   "engines": {
