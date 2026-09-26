@@ -12,23 +12,29 @@ Keep your workflow source and prompts in your own Git repository.
 *Countdown: an agent proposes the next integer, Python validates it, and a decreasing
 counter controls the loop.*
 
+## Why workflows?
+
+Workflows make proposal, verification, feedback, and revision explicit: an agent
+proposes a result, your Python checks test it against your criteria, and failures
+guide the next revision. Verdog lets you inspect and reuse that cycle. Read
+[Why Verdog?](https://drexlerd.github.io/verdog-website/why-verdog.html) for the
+motivation and limits.
+
 ## What you can do
 
 - **Compose workflows visually.** Connect agent calls, Python steps, and reusable
   subroutines. Add conditions and effects to express how execution progresses.
 - **Work beside your code.** Navigate from the canvas to Python implementations.
   Edit your prompts alongside them, and edit `project.json` with completion and undo.
-- **Check before running.** Validate graph connections and Python types, see diagnostics
-  in the Problems panel, and inspect structural termination analysis.
+- **Check before running.** Validate graph connections and Python types, and see
+  diagnostics in the Problems panel.
+- **Terminating workflows.** Certify termination using declared feature conditions
+  and effects, as in the [running example](https://drexlerd.github.io/verdog-website/running-example.html).
+  Certification assumes that individual steps terminate and respect those declarations.
 - **Run and recover.** Execute locally, inspect outputs and logs in the Runs view, resume
   interrupted runs, restart a run, or fork from a saved checkpoint.
 - **Share and reuse.** Browse published workflows, inspect their source, and import
   releases pinned to Git commits. Publish workflows from your own repository.
-
-Structural termination analysis uses the graph's declared feature conditions and effects.
-A certificate does not prove that arbitrary Python code or provider calls terminate.
-The [running example](https://drexlerd.github.io/verdog-website/running-example.html)
-shows a certified loop and the Python validation behind it.
 
 ## Get started
 
@@ -49,6 +55,9 @@ Install **Verdog** from VS Code's Extensions view, then:
 2. Run `verdog sync` in the project's terminal to prepare its Python environments.
 3. Use **Verdog: Show Canvas**, **Verdog: Check**, and **Verdog: Run Workflow** to edit,
    check, and run. The initial blank workflow succeeds without an agent request.
+
+A successful check in the editor or terminal remains current across reloads until
+its source files change. Unsaved source edits also mark the canvas as unchecked.
 
 For a complete agent workflow, follow the
 [Countdown walkthrough](https://drexlerd.github.io/verdog-website/running-example.html).
@@ -135,7 +144,11 @@ Use the paired local-package installation while the matching runtime is unpublis
 
 `npm test` needs no sibling repositories. With `../verdog-cli` and
 `../verdog-runtime` checked out, `npm run test:integration` checks the run-history
-contract against the CLI and runtime producers.
+contract against the CLI and runtime producers. CI and release packaging also run this
+check against the published CLI and its resolved runtime dependency, using their
+matching release tags. Each run records the exact tags and commit SHAs in the
+`run-history-contract-refs` artifact. This checks source/schema parity, not live
+backend compatibility.
 The extension host lives in `src/`, platform-neutral graph and editing logic in `model/`,
 and the canvas and catalogue webviews in `webview/`.
 

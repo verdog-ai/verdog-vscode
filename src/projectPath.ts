@@ -48,3 +48,24 @@ export async function directProjectPath(
   }
   return resolved;
 }
+
+/** Validate a managed cache path, including its storage root, before filesystem access. */
+export async function managedCachePath(
+  storage: string,
+  target: string,
+): Promise<string> {
+  try {
+    const status = await fs.lstat(storage);
+    if (!status.isDirectory() || status.isSymbolicLink()) {
+      throw new Error('The catalogue storage root must be a real directory.');
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
+  return directProjectPath(
+    storage,
+    path.relative(storage, target).split(path.sep).join('/'),
+  );
+}

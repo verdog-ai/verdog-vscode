@@ -20,6 +20,7 @@ import type {
 } from '../model/catalogue';
 import {packageDirectory} from '../model/names';
 import {verdog} from './cli';
+import {managedCachePath} from './projectPath';
 import {formatGitHubGitFailure, runGitHubGit} from './githubGit';
 import {githubRemoteMatches} from './githubRemote';
 
@@ -109,7 +110,10 @@ async function fetchFromGit(
   signal: AbortSignal | undefined,
   log: (line: string) => void,
 ): Promise<CatalogueDocumentation> {
-  const root = metadataRoot(storage.fsPath, entry.repository);
+  const root = await managedCachePath(
+    storage.fsPath,
+    metadataRoot(storage.fsPath, entry.repository),
+  );
   if (!(await ensureBare(root, entry.repository, signal, log))) {
     return {
       detail:

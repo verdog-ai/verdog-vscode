@@ -36,6 +36,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Check published run-history contract
+        uses: ./.github/actions/run-history-contract
+
       - name: Package extension
         run: npm run package -- --githubBranch "$GITHUB_REF_NAME"
 

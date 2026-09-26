@@ -37,6 +37,7 @@ import {
   type OpenHost,
 } from './projectHost';
 import {webviewHtml} from './webviewHtml';
+import {managedCachePath} from './projectPath';
 import {
   catalogueMetadataDifferences,
   catalogueMetadataKey,
@@ -52,6 +53,7 @@ import {
 } from '../model/catalogue';
 import {packageProblem} from '../model/names';
 import type {CatalogueToHost, HostToCatalogue} from '../model/protocol';
+import {isCatalogueToHost} from '../model/protocolMessages';
 
 const REFUSED = [
   'verdog.run',
@@ -299,9 +301,18 @@ class CatalogueRecordPanel {
       this.readmeAbort?.abort();
       this.inspectionAbort?.abort();
     });
-    panel.webview.onDidReceiveMessage(
-      (message: CatalogueToHost) => void this.receive(message),
-    );
+    panel.webview.onDidReceiveMessage(async (message: unknown) => {
+      if (!isCatalogueToHost(message)) {
+        return;
+      }
+      try {
+        await this.receive(message);
+      } catch (error) {
+        void vscode.window.showErrorMessage(
+          `Verdog catalogue: ${String(error)}`,
+        );
+      }
+    });
     return panel;
   }
 
@@ -316,11 +327,14 @@ class CatalogueRecordPanel {
     detail: CatalogueDetail,
   ): Promise<CatalogueInspection> {
     const preview = previewOf(this.host, detail);
-    const cached = checkoutRoot(
+    const cached = await managedCachePath(
       this.context.globalStorageUri.fsPath,
-      preview.repository,
-      preview.commit,
-      preview.workflow,
+      checkoutRoot(
+        this.context.globalStorageUri.fsPath,
+        preview.repository,
+        preview.commit,
+        preview.workflow,
+      ),
     );
     const state = await readInspectionState(cached, preview);
     if (state === undefined) {
@@ -494,6 +508,8 @@ class CatalogueRecordPanel {
             await this.finishIncomplete(
               root,
               preview,
+              detail,
+              revision,
               'Pinned dependencies could not all be fetched.',
               'unchecked',
             );
@@ -502,6 +518,9 @@ class CatalogueRecordPanel {
 
           const sourceProblem = await sourceOnlyProblem(root);
           if (sourceProblem !== undefined) {
+            if (revision !== this.revision) {
+              return;
+            }
             this.updateInspection({detail: sourceProblem, state: 'incomplete'});
             return;
           }
@@ -523,6 +542,8 @@ class CatalogueRecordPanel {
             await this.finishIncomplete(
               root,
               preview,
+              detail,
+              revision,
               controller.signal.aborted
                 ? 'Inspection was cancelled.'
                 : `Source metadata could not be verified: ${cliFailure(described).message}`,
@@ -540,6 +561,8 @@ class CatalogueRecordPanel {
             await this.finishIncomplete(
               root,
               preview,
+              detail,
+              revision,
               `Source metadata was unreadable: ${String(error)}`,
               'unchecked',
             );
@@ -560,6 +583,9 @@ class CatalogueRecordPanel {
               root,
               preview,
             );
+            if (revision !== this.revision) {
+              return;
+            }
             this.updateInspection({
               detail: `Published metadata differs from source: ${differences.join(', ')}.`,
               folder: root,
@@ -603,15 +629,18 @@ class CatalogueRecordPanel {
   private async finishIncomplete(
     root: string,
     preview: ReturnType<typeof previewOf>,
+    catalogue: CatalogueDetail,
+    revision: number,
     detail: string,
     metadata: 'ready' | 'unchecked',
   ): Promise<void> {
     this.host.output.appendLine(`inspection incomplete: ${detail}`);
     const previous = await readInspectionState(root, preview);
+    if (revision !== this.revision) {
+      return;
+    }
     await writeInspectionState(root, {
-      ...(this.record.detail === undefined
-        ? {}
-        : {catalogue: catalogueMetadataKey(this.record.detail)}),
+      catalogue: catalogueMetadataKey(catalogue),
       dependencies: previous?.dependencies ?? 'incomplete',
       metadata,
       preview,
@@ -623,6 +652,9 @@ class CatalogueRecordPanel {
       root,
       preview,
     );
+    if (revision !== this.revision) {
+      return;
+    }
     this.updateInspection({detail, folder: root, state: 'incomplete'});
   }
 
@@ -1060,9 +1092,18 @@ class CatalogueView implements vscode.WebviewViewProvider {
       this.context.extensionUri,
       'catalogue',
     );
-    view.webview.onDidReceiveMessage(
-      (message: CatalogueToHost) => void this.receive(message),
-    );
+    view.webview.onDidReceiveMessage(async (message: unknown) => {
+      if (!isCatalogueToHost(message)) {
+        return;
+      }
+      try {
+        await this.receive(message);
+      } catch (error) {
+        void vscode.window.showErrorMessage(
+          `Verdog catalogue: ${String(error)}`,
+        );
+      }
+    });
   }
 
   private post(listing: CatalogueListing): void {
@@ -1200,6 +1241,7 @@ async function manageCache(context: vscode.ExtensionContext): Promise<void> {
     target?: vscode.Uri;
   }> = [];
   try {
+    await managedCachePath(context.globalStorageUri.fsPath, previewRoot.fsPath);
     const rootStatus = await lstat(previewRoot.fsPath);
     if (!rootStatus.isDirectory() || rootStatus.isSymbolicLink()) {
       throw new Error('The preview cache root must be a real directory.');
@@ -1264,16 +1306,20 @@ async function manageCache(context: vscode.ExtensionContext): Promise<void> {
   try {
     if (all) {
       for (const root of roots) {
-        await deleteCache(root.fsPath);
+        await deleteCache(context.globalStorageUri.fsPath, root.fsPath);
       }
     } else {
       const target = selected.target!;
-      await deleteCache(target.fsPath);
+      await deleteCache(context.globalStorageUri.fsPath, target.fsPath);
       const workspaces = vscode.Uri.joinPath(
         context.globalStorageUri,
         PREVIEW_WORKSPACE_DIRECTORY,
       );
       try {
+        await managedCachePath(
+          context.globalStorageUri.fsPath,
+          workspaces.fsPath,
+        );
         for (const [name, type] of await vscode.workspace.fs.readDirectory(
           workspaces,
         )) {
@@ -1290,8 +1336,11 @@ async function manageCache(context: vscode.ExtensionContext): Promise<void> {
             folders?: Array<{path?: string}>;
           };
           if (value.folders?.some(folder => folder.path === target.fsPath)) {
-            await deleteCache(location.fsPath);
-            await deleteCache(`${location.fsPath}.json`);
+            await deleteCache(context.globalStorageUri.fsPath, location.fsPath);
+            await deleteCache(
+              context.globalStorageUri.fsPath,
+              `${location.fsPath}.json`,
+            );
           }
         }
       } catch (error) {

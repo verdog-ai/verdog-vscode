@@ -14,6 +14,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 
 import {verdog} from './cli';
+import {managedCachePath} from './projectPath';
 import {
   SUBMODULE_SYNC_ARGUMENTS,
   SUBMODULE_UPDATE_ARGUMENTS,
@@ -255,7 +256,11 @@ export async function sourceOnlyProblem(
 }
 
 /** Await actual removal; VS Code's provider may move files and discard later deletion errors. */
-export async function deleteCache(root: string): Promise<void> {
+export async function deleteCache(
+  storage: string,
+  root: string,
+): Promise<void> {
+  await managedCachePath(storage, root);
   let status;
   try {
     status = await lstat(root);
@@ -289,11 +294,14 @@ export async function materialise(
   log: (line: string) => void,
   options: MaterialiseOptions = {},
 ): Promise<MaterialisedPreview | undefined> {
-  const root = checkoutRoot(
+  const root = await managedCachePath(
     storage.fsPath,
-    preview.repository,
-    preview.commit,
-    preview.workflow,
+    checkoutRoot(
+      storage.fsPath,
+      preview.repository,
+      preview.commit,
+      preview.workflow,
+    ),
   );
   const folder = vscode.Uri.file(root);
   options.phase?.('Fetching exact source');
@@ -420,6 +428,7 @@ export async function configurePreviewWorkspace(
       preview.origin,
     ),
   );
+  await managedCachePath(storage.fsPath, location.fsPath);
   await vscode.workspace.fs.createDirectory(
     vscode.Uri.file(path.dirname(location.fsPath)),
   );
@@ -531,6 +540,8 @@ export async function readPreview(
     return marker;
   }
   try {
+    await managedCachePath(storage.fsPath, workspaceFile.fsPath);
+    await managedCachePath(storage.fsPath, `${workspaceFile.fsPath}.json`);
     const raw = await vscode.workspace.fs.readFile(
       vscode.Uri.file(`${workspaceFile.fsPath}.json`),
     );

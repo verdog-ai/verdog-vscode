@@ -285,35 +285,6 @@ export function Properties({
               ))}
               <div>
                 <dt>
-                  <label htmlFor="property-profile-web-search">
-                    web_search
-                  </label>
-                </dt>
-                <dd>
-                  <input
-                    checked={draftProfile.options.web_search === true}
-                    disabled={!settingsWritable}
-                    id="property-profile-web-search"
-                    onChange={event =>
-                      setDraftProfile(current =>
-                        current === undefined
-                          ? current
-                          : {
-                              ...current,
-                              options: {
-                                ...current.options,
-                                web_search: event.target.checked,
-                              },
-                            },
-                      )
-                    }
-                    title="Let read-only agents of this profile search and fetch the web"
-                    type="checkbox"
-                  />
-                </dd>
-              </div>
-              <div>
-                <dt>
                   <label htmlFor="property-profile-extra-args">
                     extra_args
                   </label>

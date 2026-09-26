@@ -101,8 +101,7 @@
         "extra_args": {
           "type": "array",
           "items": { "type": "string" }
-        },
-        "web_search": { "type": "boolean" }
+        }
       },
       "additionalProperties": false
     },

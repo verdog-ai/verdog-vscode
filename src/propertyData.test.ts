@@ -1127,8 +1127,7 @@ test('parameter pages resolve to the concrete resources bound through the call p
       options: {
         model: 'claude-fable-5-1',
         reasoning_effort: 'high',
-        extra_args: [],
-        web_search: true,
+        extra_args: ['--tools', 'Read,Grep,Glob,WebSearch,WebFetch'],
       },
     },
   ];
@@ -1139,7 +1138,11 @@ test('parameter pages resolve to the concrete resources bound through the call p
   // Direct: main's parameter is bound by the workflow entry.
   const direct = resolveParameter(value, graphId('main'), 'profile', 'agent');
   assert.deepEqual(direct.map(bindingSummary), [
-    'workflow main → builder (claude · claude-fable-5-1 · high · web search)',
+    'workflow main → builder (claude · claude-fable-5-1 · high)',
+  ]);
+  assert.deepEqual(direct[0].profile?.options.extra_args, [
+    '--tools',
+    'Read,Grep,Glob,WebSearch,WebFetch',
   ]);
   // Chained: implement's parameter is bound to main's parameter, which resolves further up.
   const chained = resolveParameter(
@@ -1185,8 +1188,7 @@ test('parameter pages resolve to the concrete resources bound through the call p
   assert.deepEqual(page.fields, [
     {
       label: 'resolves to',
-      value:
-        'workflow main → builder (claude · claude-fable-5-1 · high · web search)',
+      value: 'workflow main → builder (claude · claude-fable-5-1 · high)',
     },
   ]);
   assert.equal(page.entries.length, 1);
@@ -1195,7 +1197,7 @@ test('parameter pages resolve to the concrete resources bound through the call p
   assert.equal(entry.id, 'builder');
   assert.deepEqual(entry.meta, [
     'resolves to',
-    'claude · claude-fable-5-1 · high · web search',
+    'claude · claude-fable-5-1 · high',
   ]);
   assert.equal(
     entry.declaration,
@@ -1232,25 +1234,27 @@ test('parameter pages resolve to the concrete resources bound through the call p
   assert.deepEqual(unbound.entries, []);
 });
 
-test('a profile page carries the web_search option', () => {
+test('a profile page carries provider arguments', () => {
   const value = testProject() as unknown as CanonicalProject;
   const main = subroutineInProject(value, graphId('main'))!;
   main.profiles = [
     {
-      ...testProfile('default', 'Default'),
+      ...testProfile('default', 'Default', 'claude'),
       options: {
         model: null,
         reasoning_effort: null,
-        extra_args: [],
-        web_search: true,
+        extra_args: ['--tools', 'Read,Grep,Glob,WebSearch,WebFetch'],
       },
     },
   ];
   const details = entityDetails(value, 'main', 'profiles', 'default')!;
-  assert.equal(details.profile?.options.web_search, true);
-  assert.equal(
+  assert.deepEqual(details.profile?.options.extra_args, [
+    '--tools',
+    'Read,Grep,Glob,WebSearch,WebFetch',
+  ]);
+  assert.deepEqual(
     entityDetails(testProject(), 'main', 'profiles', 'default')!.profile
-      ?.options.web_search,
-    undefined,
+      ?.options.extra_args,
+    [],
   );
 });

@@ -21,9 +21,14 @@ import {test} from 'node:test';
 import {build} from 'esbuild';
 import type * as vscode from 'vscode';
 
-import type {CatalogueSummary} from '../model/catalogue';
+import {
+  decodeCatalogueDetail,
+  type CatalogueSummary,
+  type CatalogueDetail,
+  type CatalogueRecord,
+} from '../model/catalogue';
 import type {Outcome} from './cli';
-import type {Preview} from './preview';
+import type {InspectionState, Preview} from './preview';
 import {
   SUBMODULE_SYNC_ARGUMENTS,
   SUBMODULE_UPDATE_ARGUMENTS,
@@ -522,7 +527,7 @@ test('locking and removing a real cache leaves external symlink targets untouche
     const before = (await stat(outside)).mode;
     await module.lockPreview(root, () => {});
     assert.equal((await stat(outside)).mode, before);
-    await module.deleteCache(root);
+    await module.deleteCache(temporary, root);
     assert.equal(await readFile(path.join(outside, 'keep'), 'utf8'), 'outside');
     await assert.rejects(lstat(root), {code: 'ENOENT'});
     const link = path.join(temporary, 'root-link');
@@ -531,7 +536,7 @@ test('locking and removing a real cache leaves external symlink targets untouche
       module.lockPreview(link, () => {}),
       /real directory/,
     );
-    await module.deleteCache(link);
+    await assert.rejects(module.deleteCache(temporary, link), /symbolic link/);
     assert.equal((await stat(outside)).mode, before);
   } finally {
     await chmod(root, 0o755).catch(() => {});
@@ -727,4 +732,191 @@ test('a queued authentication reload cannot supersede a newer interactive catalo
     kind: 'listing',
     listing: {entries: [], login: 'renewed', state: 'empty'},
   });
+});
+
+test('cache creation and deletion reject a symlinked parent and preserve outside files', async context => {
+  const temporary = await mkdtemp(path.join(tmpdir(), 'verdog-cache-parent-'));
+  context.after(() => rm(temporary, {recursive: true, force: true}));
+  const storagePath = path.join(temporary, 'storage');
+  const outside = path.join(temporary, 'outside');
+  await mkdir(storagePath);
+  await mkdir(outside);
+  const protectedFile = path.join(outside, 'keep.code-workspace');
+  await writeFile(protectedFile, 'outside');
+  const vscodeMock = filesystemVscode();
+  const module = await load<typeof import('./checkout')>('checkout.ts', {
+    vscode: vscodeMock,
+  });
+  const storage = vscodeMock.Uri.file(storagePath) as unknown as vscode.Uri;
+  await symlink(
+    outside,
+    path.join(storagePath, module.PREVIEW_WORKSPACE_DIRECTORY),
+    'dir',
+  );
+  await assert.rejects(
+    module.configurePreviewWorkspace(storage, '/source', {
+      repository,
+      commit,
+      workflow: 'main',
+    }),
+    /symbolic link/,
+  );
+  await assert.rejects(
+    module.deleteCache(
+      storagePath,
+      path.join(
+        storagePath,
+        module.PREVIEW_WORKSPACE_DIRECTORY,
+        'keep.code-workspace',
+      ),
+    ),
+    /symbolic link/,
+  );
+  await symlink(
+    outside,
+    path.join(storagePath, module.PREVIEW_DIRECTORY),
+    'dir',
+  );
+  await assert.rejects(
+    module.materialise(
+      storage,
+      {repository, commit, workflow: 'main'},
+      () => {},
+    ),
+    /symbolic link/,
+  );
+  assert.equal(await readFile(protectedFile, 'utf8'), 'outside');
+  assert.deepEqual(await readdir(outside), ['keep.code-workspace']);
+});
+
+test('an old incomplete inspection cannot overwrite a newer inspection of the same release', async () => {
+  let provider!: {
+    record: {
+      revision: number;
+      record: CatalogueRecord;
+      finishIncomplete(
+        root: string,
+        preview: Preview,
+        detail: CatalogueDetail,
+        revision: number,
+        message: string,
+        metadata: 'unchecked',
+      ): Promise<void>;
+    };
+  };
+  let releaseRead!: (state: InspectionState | undefined) => void;
+  const written: InspectionState[] = [];
+  const {registerCatalogue} = await load<typeof import('./catalogueView')>(
+    'catalogueView.ts',
+    {
+      './projectHost': {
+        chooseSubroutineIn() {},
+        cliCommand: () => ['verdog'],
+        isEditable: () => false,
+        refresh() {},
+      },
+      './verdogCommand': {backendCommand() {}},
+      './webviewHtml': {webviewHtml: () => ''},
+      './checkout': {
+        checkoutRoot() {},
+        configurePreviewWorkspace: async () => {},
+        lockPreview: async () => {},
+        materialise() {},
+        deleteCache() {},
+        sourceOnlyProblem() {},
+        PREVIEW_DIRECTORY: 'preview-v2',
+        PREVIEW_WORKSPACE_DIRECTORY: 'preview-workspaces-v2',
+        openPreviewWorkspace() {},
+        readMarker() {},
+        readInspectionState: () =>
+          new Promise<InspectionState | undefined>(resolve => {
+            releaseRead = resolve;
+          }),
+        writeInspectionState: async (_root: string, state: InspectionState) => {
+          written.push(state);
+        },
+      },
+      vscode: {
+        authentication: {onDidChangeSessions: () => ({dispose() {}})},
+        commands: {registerCommand: () => ({dispose() {}})},
+        window: {
+          registerWebviewViewProvider: (
+            _id: string,
+            value: typeof provider,
+          ) => {
+            provider = value;
+            return {dispose() {}};
+          },
+        },
+        workspace: {onDidChangeConfiguration: () => ({dispose() {}})},
+      },
+    },
+  );
+  registerCatalogue(
+    {
+      subscriptions: [],
+      globalStorageUri: uri('/cache'),
+    } as unknown as vscode.ExtensionContext,
+    {output: {appendLine() {}}} as unknown as Parameters<
+      typeof registerCatalogue
+    >[1],
+  );
+  const first = decodeCatalogueDetail({
+    id: '11111111-1111-4111-a111-111111111111',
+    repository,
+    commit,
+    workflow_id: 'main',
+    package: 'example.project',
+    published_at: '2026-09-02T10:00:00Z',
+    scope: 'public',
+    closure: [],
+  });
+  const second = {
+    ...first,
+    commit: 'b'.repeat(40),
+    display_name: 'Second release',
+  };
+  const panel = provider.record;
+  panel.revision = 1;
+  const pending = panel.finishIncomplete(
+    '/cache/first',
+    {repository, commit, workflow: 'main'},
+    first,
+    1,
+    'interrupted',
+    'unchecked',
+  );
+  panel.revision = 2;
+  panel.record = {
+    detail: second,
+    documentation: {state: 'loading'},
+    inspection: {state: 'idle'},
+    requested: second.id,
+    state: 'ready',
+  };
+  // Selecting A again and finishing its newer inspection must also invalidate
+  // the earlier A operation, even though its cache path and release agree.
+  panel.revision = 3;
+  const current: CatalogueRecord = {
+    detail: first,
+    documentation: {state: 'loading'},
+    inspection: {state: 'ready', folder: '/cache/first'},
+    requested: first.id,
+    state: 'ready',
+  };
+  panel.record = current;
+  releaseRead({
+    dependencies: 'ready',
+    metadata: 'ready',
+    preview: {repository, commit, workflow: 'main'},
+    source: 'ready',
+    version: 2,
+  });
+  await pending;
+  assert.equal(panel.record, current);
+  assert.deepEqual(
+    written,
+    [],
+    'the newer ready receipt must not be overwritten',
+  );
 });

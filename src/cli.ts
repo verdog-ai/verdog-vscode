@@ -7,8 +7,12 @@
  */
 
 import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {promises as fs} from 'node:fs';
 import * as path from 'node:path';
 import {createInterface} from 'node:readline';
+
+import {directProjectPath} from './projectPath';
 
 export interface Outcome {
   code: number;
@@ -260,4 +264,62 @@ export function parseVerdict(
       .filter((item): item is CliDiagnostic => item !== undefined),
     graphHash: body.graph_hash,
   };
+}
+
+/** Read a successful CLI check only while its saved inputs still match. */
+export async function readCheckVerdict(
+  root: string,
+  dirtyFiles: readonly string[] = [],
+): Promise<Verdict | undefined> {
+  try {
+    const raw = await fs.readFile(
+      await directProjectPath(root, '.verdog/check.json'),
+      'utf8',
+    );
+    const verdict = parseVerdict(raw, root);
+    const receipt: unknown = JSON.parse(raw);
+    if (!verdict || !receipt || typeof receipt !== 'object') {
+      return undefined;
+    }
+    const {version, sources} = receipt as Record<string, unknown>;
+    if (
+      version !== 1 ||
+      !sources ||
+      typeof sources !== 'object' ||
+      Array.isArray(sources) ||
+      typeof (sources as Record<string, unknown>)['project.json'] !== 'string'
+    ) {
+      return undefined;
+    }
+    for (const [relative, expected] of Object.entries(sources)) {
+      if (
+        expected !== null &&
+        (typeof expected !== 'string' || !/^[a-f0-9]{64}$/.test(expected))
+      ) {
+        return undefined;
+      }
+      const file = await directProjectPath(root, relative);
+      if (dirtyFiles.includes(file)) {
+        return undefined;
+      }
+      let actual: string | null;
+      try {
+        actual = createHash('sha256')
+          .update(await fs.readFile(file))
+          .digest('hex');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
+        actual = null;
+      }
+      if (actual !== expected) {
+        return undefined;
+      }
+    }
+    return verdict;
+  } catch {
+    // Missing, stale, malformed, or unsafe receipts are not successful checks.
+    return undefined;
+  }
 }

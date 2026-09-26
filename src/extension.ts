@@ -14,6 +14,7 @@ import {
   cliCommand,
   findClone,
   hasProject,
+  invalidateCheck,
   refresh,
   selectWorkflowEnvironment,
   syncActiveEditorReadonly,
@@ -59,7 +60,6 @@ export async function activate(
     showingSubroutine: undefined,
     workflowEnvironmentSelection: Promise.resolve(),
     snapshot: undefined,
-    verdict: undefined,
     view: undefined,
   };
   context.subscriptions.push({dispose: () => host.termination?.dispose()});
@@ -111,16 +111,32 @@ export async function activate(
     ),
   );
 
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  const changed = (uri: vscode.Uri): void => {
+    if (!invalidateCheck(host, uri.fsPath)) {
+      return;
+    }
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => void refresh(host), 100);
+  };
   const watcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(
-      host.root,
-      '{project.json,external/**/project.json}',
-    ),
+    new vscode.RelativePattern(host.root, '**/*'),
   );
-  watcher.onDidChange(() => void refresh(host));
-  watcher.onDidCreate(() => void refresh(host));
-  watcher.onDidDelete(() => void refresh(host));
-  context.subscriptions.push(watcher, ...registerProjectCommands(host));
+  watcher.onDidChange(changed);
+  watcher.onDidCreate(changed);
+  watcher.onDidDelete(changed);
+  context.subscriptions.push(
+    watcher,
+    {dispose: () => clearTimeout(refreshTimer)},
+    vscode.workspace.onDidChangeTextDocument(event => {
+      if (event.document.isDirty) {
+        invalidateCheck(host, event.document.uri.fsPath);
+      }
+    }),
+    vscode.workspace.onDidSaveTextDocument(document => changed(document.uri)),
+    vscode.workspace.onDidCloseTextDocument(document => changed(document.uri)),
+    ...registerProjectCommands(host),
+  );
 
   for (const entry of (process.env.VERDOG_COMMANDS ?? '')
     .split(';')

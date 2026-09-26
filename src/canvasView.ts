@@ -4,6 +4,10 @@ import * as vscode from 'vscode';
 
 import {handleCanvasAction} from './projectActions';
 import {
+  isCanvasToHost,
+  isNavigationBrowserToHost,
+} from '../model/protocolMessages';
+import {
   deliverPendingReveal,
   followNavigation,
   followNavigationTarget,
@@ -15,11 +19,9 @@ import {
 } from './projectHost';
 import {webviewHtml} from './webviewHtml';
 import type {
-  CanvasToHost,
   HostToCanvas,
   HostToNavigationBrowser,
   NavigationCategory,
-  NavigationBrowserToHost,
   NavigationEntry,
   NavigationPage,
   NavigationPropertyEdit,
@@ -84,7 +86,11 @@ class CanvasView implements vscode.WebviewViewProvider {
     return fresh;
   }
 
-  private freshVisit(visit: BrowserVisit): BrowserVisit | undefined {
+  private freshVisit(
+    visit: Omit<BrowserVisit, 'page'> & {
+      page: Pick<NavigationPage, 'category'>;
+    },
+  ): BrowserVisit | undefined {
     const snapshot = this.host.snapshot;
     if (snapshot === undefined) {
       return undefined;
@@ -276,106 +282,101 @@ class CanvasView implements vscode.WebviewViewProvider {
         } satisfies HostToCanvas);
       });
       let propertyPending = false;
-      panel.webview.onDidReceiveMessage(
-        async (message: NavigationBrowserToHost) => {
-          if (typeof message !== 'object' || message === null) {
-            return;
+      panel.webview.onDidReceiveMessage(async (message: unknown) => {
+        if (!isNavigationBrowserToHost(message)) {
+          return;
+        }
+        if (this.browser !== panel) {
+          return;
+        }
+        if (message.kind === 'property') {
+          let saved = false;
+          const accepted =
+            !propertyPending && message.route === this.currentRoute();
+          if (accepted) {
+            propertyPending = true;
           }
-          if (this.browser !== panel) {
-            return;
-          }
-          if (message.kind === 'property') {
-            let saved = false;
-            const accepted =
-              !propertyPending && message.route === this.currentRoute();
+          try {
             if (accepted) {
-              propertyPending = true;
+              saved = await this.editProperty(message.edit);
             }
-            try {
-              if (accepted) {
-                saved = await this.editProperty(message.edit);
-              }
-            } catch (error) {
-              void vscode.window.showErrorMessage(
-                `Verdog: property could not be saved: ${String(error)}`,
-              );
-            } finally {
-              if (accepted) {
-                propertyPending = false;
-              }
-              this.postPropertyResult(panel, message, saved);
+          } catch (error) {
+            void vscode.window.showErrorMessage(
+              `Verdog: property could not be saved: ${String(error)}`,
+            );
+          } finally {
+            if (accepted) {
+              propertyPending = false;
             }
+            this.postPropertyResult(panel, message, saved);
+          }
+          return;
+        }
+        if ('route' in message && message.route !== this.currentRoute()) {
+          return;
+        }
+        if (message.kind === 'ready') {
+          this.postBrowserPage();
+        } else if (message.kind === 'close') {
+          panel.dispose();
+        } else if (message.kind === 'navigate') {
+          await this.navigate(message.direction);
+        } else if (message.kind === 'termination-highlight') {
+          const current = this.freshCurrentVisit();
+          const termination = this.host.snapshot?.termination;
+          if (current === undefined || termination?.status !== 'ready') {
             return;
           }
-          if ('route' in message && message.route !== this.currentRoute()) {
+          if (message.revision !== terminationRevision(termination.report)) {
             return;
           }
-          if (message.kind === 'ready') {
-            this.postBrowserPage();
-          } else if (message.kind === 'close') {
-            panel.dispose();
-          } else if (message.kind === 'navigate') {
-            await this.navigate(message.direction);
-          } else if (message.kind === 'termination-highlight') {
-            const current = this.freshCurrentVisit();
-            const termination = this.host.snapshot?.termination;
-            if (current === undefined || termination?.status !== 'ready') {
-              return;
-            }
-            if (message.revision !== terminationRevision(termination.report)) {
-              return;
-            }
-            const definition =
-              termination.report.definitions[current.target.scope];
-            if (definition === undefined) {
-              return;
-            }
-            if (
-              message.region !== null &&
-              !definition.regions.some(({id}) => id === message.region)
-            ) {
-              return;
-            }
-            void this.host.view?.webview.postMessage({
-              kind: 'termination-highlight',
-              scope: current.target.scope,
-              region: message.region,
-              revision: message.revision,
-            } satisfies HostToCanvas);
-          } else if (message.kind === 'overview') {
-            const target = this.overviewTarget();
-            if (target !== undefined) {
-              this.browserRestoring = undefined;
-              await followNavigationTarget(this.host, target);
-            }
-          } else if (
-            (message.kind === 'open' || message.kind === 'reveal') &&
-            hasProject(this.host)
-          ) {
-            const entry = this.entry(message.key);
-            if (entry !== undefined) {
-              this.browserRestoring = undefined;
-              await followNavigation(this.host, entry, message.kind === 'open');
-            }
-          } else if (
-            message.kind === 'open-document' &&
-            hasProject(this.host)
-          ) {
-            const page = this.freshCurrentVisit()?.page;
-            if (
-              page?.category === 'entity' &&
-              page.documents.some(({path}) => path === message.path)
-            ) {
-              await openProjectDocument(this.host, message.path);
-            }
-          } else if (message.kind === 'remove' && hasProject(this.host)) {
-            const removal = this.entry(message.key)?.removal;
-            if (removal !== undefined) {
-              await handleCanvasAction(this.host, {...removal, kind: 'remove'});
-            }
+          const definition =
+            termination.report.definitions[current.target.scope];
+          if (definition === undefined) {
+            return;
           }
-        },
-      );
+          if (
+            message.region !== null &&
+            !definition.regions.some(({id}) => id === message.region)
+          ) {
+            return;
+          }
+          void this.host.view?.webview.postMessage({
+            kind: 'termination-highlight',
+            scope: current.target.scope,
+            region: message.region,
+            revision: message.revision,
+          } satisfies HostToCanvas);
+        } else if (message.kind === 'overview') {
+          const target = this.overviewTarget();
+          if (target !== undefined) {
+            this.browserRestoring = undefined;
+            await followNavigationTarget(this.host, target);
+          }
+        } else if (
+          (message.kind === 'open' || message.kind === 'reveal') &&
+          hasProject(this.host)
+        ) {
+          const entry = this.entry(message.key);
+          if (entry !== undefined) {
+            this.browserRestoring = undefined;
+            await followNavigation(this.host, entry, message.kind === 'open');
+          }
+        } else if (message.kind === 'open-document' && hasProject(this.host)) {
+          const page = this.freshCurrentVisit()?.page;
+          if (
+            page?.category === 'entity' &&
+            page.documents.some(({path}) => path === message.path)
+          ) {
+            await openProjectDocument(this.host, message.path);
+          }
+        } else if (message.kind === 'remove' && hasProject(this.host)) {
+          const removal = this.entry(message.key)?.removal;
+          if (removal !== undefined) {
+            await handleCanvasAction(this.host, {...removal, kind: 'remove'});
+          }
+        }
+      });
       panel.webview.html = webviewHtml(
         panel.webview,
         this.extension,
@@ -593,8 +594,8 @@ class CanvasView implements vscode.WebviewViewProvider {
         this.host.view = undefined;
       }
     });
-    view.webview.onDidReceiveMessage(async (message: CanvasToHost) => {
-      if (typeof message !== 'object' || message === null) {
+    view.webview.onDidReceiveMessage(async (message: unknown) => {
+      if (!isCanvasToHost(message)) {
         return;
       }
       if (this.host.view !== view) {
@@ -630,14 +631,18 @@ class CanvasView implements vscode.WebviewViewProvider {
           this.host.pendingReveal = undefined;
           ++this.host.navigationRevision;
           return;
-        case 'browse':
-          this.showBrowser(
-            message.page,
-            message.target,
-            message.panel,
-            message.restoration,
-          );
+        case 'browse': {
+          const visit = this.freshVisit(message);
+          if (visit !== undefined) {
+            this.showBrowser(
+              visit.page,
+              visit.target,
+              visit.panel,
+              message.restoration,
+            );
+          }
           return;
+        }
         case 'close-browser':
           this.closeBrowser();
           return;

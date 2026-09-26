@@ -8,7 +8,7 @@ import {test} from 'node:test';
 import schema from '../schemas/run-history.schema.json';
 
 function repositoryFile(...parts: string[]): string {
-  return path.resolve('..', ...parts);
+  return path.resolve(process.env.VERDOG_CONTRACT_ROOT ?? '..', ...parts);
 }
 
 function pythonTopLevelBlock(

@@ -17,7 +17,12 @@ import {
   snapshotSubroutines,
   visibleDefinitionKeys,
 } from '../webview/subroutineGraphs';
-import {projectFileReadonly, readClone, subroutineFile} from './clone';
+import {
+  isCheckSource,
+  projectFileReadonly,
+  readClone,
+  subroutineFile,
+} from './clone';
 import {parseVerdict} from './cli';
 import {testProfile} from './fixtures';
 import {definitionTarget, navigationPage} from '../webview/navigation';
@@ -993,4 +998,46 @@ test('a pinned workflow is read from the project that defines it', () => {
   // A prefix that names no pin is looked for as a plain id.
   assert.equal(subroutineIn(snapshot, 'nope/main'), undefined);
   assert.equal(subroutineIn(snapshot, 'absent'), undefined);
+});
+
+test('check invalidation follows declared sources and dependency configuration', async context => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'verdog-check-sources-'));
+  context.after(() => fs.rm(root, {recursive: true, force: true}));
+  await fs.writeFile(
+    path.join(root, 'project.json'),
+    JSON.stringify({
+      schema_version: SCHEMA_VERSION,
+      package: 'demo',
+      sources: [{path: 'src/impl.py'}],
+    }),
+  );
+  const snapshot = await readClone(root);
+  snapshot.pinned['child.tools'] = {
+    ...snapshot.project,
+    sources: [{path: 'impl.py', ownership: 'user'}],
+  };
+  for (const relative of [
+    'project.json',
+    'src/impl.py',
+    'ty.toml',
+    'external/child/tools/impl.py',
+    'external/child/tools/pyproject.toml',
+  ]) {
+    assert.equal(
+      isCheckSource(root, path.join(root, relative), snapshot),
+      true,
+      relative,
+    );
+  }
+  for (const relative of [
+    'notes.txt',
+    '.verdog/runs/log.txt',
+    '.venv/lib/impl.py',
+  ]) {
+    assert.equal(
+      isCheckSource(root, path.join(root, relative), snapshot),
+      false,
+      relative,
+    );
+  }
 });

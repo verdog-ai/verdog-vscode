@@ -9,10 +9,8 @@ import type * as vscode from 'vscode';
 
 import type {
   CanvasAction,
-  CanvasToHost,
   HostToCanvas,
   HostToNavigationBrowser,
-  NavigationBrowserToHost,
   NavigationEntry,
   NavigationTarget,
 } from '../model/protocol';
@@ -139,7 +137,7 @@ function host(current?: ProjectSnapshot): OpenHost {
     root: '/test/project',
     snapshot: current,
     output: {appendLine() {}, show() {}},
-    problems: {clear() {}},
+    problems: {clear() {}, set() {}},
     protectedDocuments: new Set(),
   } as unknown as OpenHost;
 }
@@ -541,11 +539,14 @@ test('only the latest refresh publishes a snapshot or read failure', async () =>
       vscode: {
         commands: {},
         window: {showErrorMessage: (message: string) => errors.push(message)},
-        workspace: {isTrusted: true},
+        workspace: {isTrusted: true, textDocuments: []},
       },
       './clone': {
         readClone: () => reads[index++].promise,
         projectFileReadonly() {},
+        isCheckSource() {
+          return false;
+        },
         subroutineFile() {},
       },
     },
@@ -583,6 +584,7 @@ test('automatic service analysis waits for Workspace Trust', async () => {
         commands: {},
         window: {},
         workspace: {
+          textDocuments: [],
           get isTrusted() {
             return trusted;
           },
@@ -591,6 +593,9 @@ test('automatic service analysis waits for Workspace Trust', async () => {
       './clone': {
         readClone: async () => snapshot('graph'),
         projectFileReadonly() {},
+        isCheckSource() {
+          return false;
+        },
         subroutineFile() {},
       },
       './verdogCommand': {
@@ -641,6 +646,7 @@ test('workspace trust centrally gates editing and executable workflow verbs', as
       vscode: {
         ProgressLocation: {Window: 1},
         workspace: {
+          textDocuments: [],
           get isTrusted() {
             return trusted;
           },
@@ -654,6 +660,7 @@ test('workspace trust centrally gates editing and executable workflow verbs', as
       './cli': {
         diagnosticRange() {},
         parseVerdict() {},
+        readCheckVerdict: async () => undefined,
         verdog: async () => {
           ++calls;
           return {code: 0, combined: '', stderr: '', stdout: ''};
@@ -708,7 +715,7 @@ test('explicit access lookup accepts API 14 catalogue permissions without changi
   const {readAccess, isEditable} = await load<typeof import('./projectHost')>(
     'projectHost.ts',
     {
-      vscode: {workspace: {isTrusted: true}},
+      vscode: {workspace: {isTrusted: true, textDocuments: []}},
       './verdogCommand': {
         cliCommand: () => ['verdog'],
         runVerdogCommand: async (_root: string, args: string[]) => {
@@ -883,6 +890,9 @@ test('a failed document save is not saved; a later generation warning does not u
       './clone': {
         readClone: async () => snapshot('saved'),
         projectFileReadonly() {},
+        isCheckSource() {
+          return false;
+        },
         subroutineFile: () => ({root: '/test/project', subroutine: 'main'}),
       },
       './cli': {
@@ -892,6 +902,7 @@ test('a failed document save is not saved; a later generation warning does not u
         },
         diagnosticRange() {},
         parseVerdict() {},
+        readCheckVerdict: async () => undefined,
       },
     },
   );
@@ -908,8 +919,8 @@ test('host navigation shares history dispatch, prunes branches, and acknowledges
   const state = host(snapshot('graph'));
   const canvasMessages: HostToCanvas[] = [];
   const browserMessages: HostToNavigationBrowser[] = [];
-  let canvasReceive!: (message: CanvasToHost) => Promise<void>;
-  let browserReceive!: (message: NavigationBrowserToHost) => Promise<void>;
+  let canvasReceive!: (message: unknown) => Promise<void>;
+  let browserReceive!: (message: unknown) => Promise<void>;
   let disposeBrowser!: () => void;
   let provider!: vscode.WebviewViewProvider;
   const commands = new Map<string, () => Promise<void>>();
@@ -989,6 +1000,14 @@ test('host navigation shares history dispatch, prunes branches, and acknowledges
     {} as vscode.WebviewViewResolveContext,
     {} as vscode.CancellationToken,
   );
+  await canvasReceive({
+    kind: 'set-session-persistence',
+    subroutine: 'main',
+    session: 'history',
+    persistent: 'false',
+  });
+  await canvasReceive({kind: 'browse', page: null, target: {scope: 'main'}});
+  assert.equal(calls, 0);
   await commands.get('verdog.canvasBack')!();
   assert.deepEqual(canvasMessages.pop(), {kind: 'navigate', direction: 'back'});
 
@@ -1078,6 +1097,12 @@ test('host navigation shares history dispatch, prunes branches, and acknowledges
     route: current.route,
     edit: {kind: 'name', name: 'Changed'},
   } as const;
+  await browserReceive({
+    ...request,
+    edit: {kind: 'session-persistence', persistent: 'false'},
+  });
+  await browserReceive({...request, edit: {kind: 'profile', profile: null}});
+  assert.equal(calls, 0);
   const pending = browserReceive(request);
   await browserReceive({...request, requestId: 2});
   assert.equal(calls, 1);
@@ -1209,7 +1234,7 @@ test('trusted previews never analyze, select Python, check, sync, or run', async
   let calls = 0;
   const module = await load<typeof import('./projectHost')>('projectHost.ts', {
     vscode: {
-      workspace: {isTrusted: true},
+      workspace: {isTrusted: true, textDocuments: []},
       commands: {},
       window: {showWarningMessage() {}},
       extensions: {
@@ -1221,6 +1246,9 @@ test('trusted previews never analyze, select Python, check, sync, or run', async
     './clone': {
       readClone: async () => snapshot('graph'),
       projectFileReadonly() {},
+      isCheckSource() {
+        return false;
+      },
       subroutineFile() {},
     },
     './verdogCommand': {
@@ -1320,5 +1348,131 @@ test('preview run history never starts a CLI process or execution command', asyn
     for (const subscription of subscriptions) {
       subscription.dispose();
     }
+  }
+});
+
+test('saved check results survive refresh and source edits invalidate them', async () => {
+  const docs: Array<{isDirty: boolean; uri: {fsPath: string}}> = [];
+  let current = true;
+  const {refresh, invalidateCheck} = await load<typeof import('./projectHost')>(
+    'projectHost.ts',
+    {
+      vscode: {
+        commands: {},
+        window: {},
+        workspace: {isTrusted: false, textDocuments: docs},
+      },
+      './clone': {
+        readClone: async () => snapshot('graph'),
+        projectFileReadonly() {},
+        subroutineFile() {},
+        isCheckSource: (_root: string, file: string) =>
+          file === '/test/project/impl.py',
+      },
+      './cli': {
+        readCheckVerdict: async () =>
+          current ? {graphHash: 'graph', diagnostics: []} : undefined,
+        parseVerdict() {},
+        diagnosticRange() {},
+        verdog() {
+          throw new Error('unexpected CLI call');
+        },
+      },
+    },
+  );
+  const state = host();
+  try {
+    await refresh(state);
+    assert.equal(state.snapshot?.checked, true, 'terminal receipt is restored');
+    await refresh(state);
+    assert.equal(state.snapshot?.checked, true);
+    assert.equal(
+      invalidateCheck(state, '/test/project/.verdog/runs/log.txt'),
+      false,
+    );
+    assert.equal(state.snapshot?.checked, true);
+    docs.push({isDirty: true, uri: {fsPath: '/test/project/impl.py'}});
+    assert.equal(invalidateCheck(state, docs[0].uri.fsPath), true);
+    assert.equal(state.snapshot?.checked, false);
+    await refresh(state);
+    assert.equal(
+      state.snapshot?.checked,
+      false,
+      'saved receipt cannot override unsaved edits',
+    );
+    docs.length = 0;
+    current = false;
+    await refresh(state);
+    assert.equal(
+      state.snapshot?.checked,
+      false,
+      'saved source changes keep the same graph unchecked',
+    );
+    current = true;
+    await refresh(state);
+    assert.equal(state.snapshot?.checked, true);
+    invalidateCheck(state, '/test/project/.verdog/check.json');
+    assert.equal(
+      state.snapshot?.checked,
+      false,
+      'a new check invalidates the old result',
+    );
+  } finally {
+    state.termination?.dispose();
+  }
+});
+
+test('manifest recovery refreshes without a snapshot and pending refresh preserves check errors', async () => {
+  let clears = 0;
+  const {refresh, invalidateCheck} = await load<typeof import('./projectHost')>(
+    'projectHost.ts',
+    {
+      vscode: {
+        commands: {},
+        window: {},
+        workspace: {isTrusted: false, textDocuments: []},
+      },
+      './clone': {
+        readClone: async () => snapshot('graph'),
+        projectFileReadonly() {},
+        subroutineFile() {},
+        isCheckSource() {
+          return false;
+        },
+      },
+      './cli': {
+        readCheckVerdict: async () => undefined,
+        parseVerdict() {},
+        diagnosticRange() {},
+        verdog() {
+          throw new Error('unexpected CLI call');
+        },
+      },
+    },
+  );
+  const state = host();
+  Object.assign(state.problems, {
+    clear() {
+      ++clears;
+    },
+  });
+  assert.equal(invalidateCheck(state, '/test/project/project.json'), true);
+  assert.equal(
+    invalidateCheck(state, '/test/project/external/new/project.json'),
+    true,
+  );
+  try {
+    await refresh(state);
+    assert.equal(state.snapshot?.checked, false);
+    assert.equal(
+      clears,
+      0,
+      'an unchecked refresh must retain newly published errors',
+    );
+    state.snapshot.checked = true;
+    await refresh(state);
+    assert.equal(clears, 1, 'a stale successful check clears old diagnostics');
+  } finally {
+    state.termination?.dispose();
   }
 });

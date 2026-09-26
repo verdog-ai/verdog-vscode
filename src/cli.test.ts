@@ -2,8 +2,12 @@
 
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {createHash} from 'node:crypto';
+import {promises as fs} from 'node:fs';
+import {tmpdir} from 'node:os';
+import * as path from 'node:path';
 
-import {diagnosticRange, parseVerdict, verdog} from './cli';
+import {diagnosticRange, parseVerdict, readCheckVerdict, verdog} from './cli';
 
 test('CLI output keeps streams separate and reports complete lines', async () => {
   const lines: string[] = [];
@@ -169,4 +173,86 @@ test('backend origin is explicit and session credentials travel only through std
     assert.equal(received.leaked, false);
     assert.equal(received.tokenReceived, token !== undefined);
   }
+});
+
+test('CLI check receipts are current only for the exact saved sources', async context => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'verdog-check-'));
+  context.after(() => fs.rm(root, {recursive: true, force: true}));
+  const files = {
+    'project.json': '{}',
+    'impl.py': 'answer = 42\r\n',
+    'external/pinned/impl.py': 'value = 1\n',
+  };
+  const sources: Record<string, string | null> = {'ty.toml': null};
+  for (const [relative, content] of Object.entries(files)) {
+    await fs.mkdir(path.dirname(path.join(root, relative)), {recursive: true});
+    await fs.writeFile(path.join(root, relative), content);
+    sources[relative] = createHash('sha256').update(content).digest('hex');
+  }
+  const receipt = {
+    version: 1,
+    graph_hash: 'graph',
+    sources,
+    diagnostics: [],
+    type_diagnostics: [],
+  };
+  await fs.mkdir(path.join(root, '.verdog'));
+  const save = () =>
+    fs.writeFile(
+      path.join(root, '.verdog/check.json'),
+      JSON.stringify(receipt),
+    );
+  assert.equal(await readCheckVerdict(root), undefined);
+  await save();
+  assert.equal((await readCheckVerdict(root))?.graphHash, 'graph');
+  assert.equal(
+    (await readCheckVerdict(root))?.graphHash,
+    'graph',
+    'reopening restores status',
+  );
+  assert.equal(
+    await readCheckVerdict(root, [path.join(root, 'impl.py')]),
+    undefined,
+  );
+  await fs.writeFile(path.join(root, 'impl.py'), 'answer = 43\n');
+  assert.equal(
+    await readCheckVerdict(root),
+    undefined,
+    'Python edits without graph changes',
+  );
+  await fs.writeFile(path.join(root, 'impl.py'), files['impl.py']);
+  await fs.writeFile(path.join(root, 'ty.toml'), '');
+  assert.equal(
+    await readCheckVerdict(root),
+    undefined,
+    'new type checker config',
+  );
+  await fs.unlink(path.join(root, 'ty.toml'));
+  await fs.unlink(path.join(root, 'external/pinned/impl.py'));
+  assert.equal(
+    await readCheckVerdict(root),
+    undefined,
+    'deleted pinned source',
+  );
+  await fs.writeFile(
+    path.join(root, 'external/pinned/impl.py'),
+    files['external/pinned/impl.py'],
+  );
+  sources['../outside'] = null;
+  await save();
+  assert.equal(
+    await readCheckVerdict(root),
+    undefined,
+    'paths cannot escape the project',
+  );
+  delete sources['../outside'];
+  receipt.version = 2;
+  await save();
+  assert.equal(
+    await readCheckVerdict(root),
+    undefined,
+    'unknown receipt version',
+  );
+  await fs.writeFile(path.join(root, '.verdog/check.json'), '{');
+  assert.equal(await readCheckVerdict(root), undefined, 'incomplete receipt');
 });

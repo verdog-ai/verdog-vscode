@@ -78,7 +78,6 @@ function concrete(
               extra_args: Array.isArray(options.extra_args)
                 ? options.extra_args.map(String)
                 : [],
-              ...(options.web_search === true ? {web_search: true} : {}),
             },
           },
         }
@@ -209,7 +208,6 @@ export function bindingSummary(binding: ResolvedBinding): string {
     provider,
     options.model ?? undefined,
     options.reasoning_effort ?? undefined,
-    options.web_search === true ? 'web search' : undefined,
   ].filter((item): item is string => item !== undefined);
   return `${where} (${settings.join(' · ')})`;
 }

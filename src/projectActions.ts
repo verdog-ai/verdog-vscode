@@ -3,6 +3,7 @@
 import * as vscode from 'vscode';
 
 import * as authoring from './authoring';
+import {isRemovalReviewToHost} from '../model/protocolMessages';
 import {runVerdogCommand} from './verdogCommand';
 import {webviewHtml} from './webviewHtml';
 import {
@@ -57,11 +58,7 @@ import {
   type NodeKind,
   type SubroutineCallArguments,
 } from '../model/project';
-import type {
-  CanvasAction,
-  HostToRemovalReview,
-  RemovalReviewToHost,
-} from '../model/protocol';
+import type {CanvasAction, HostToRemovalReview} from '../model/protocol';
 import {
   externalSubroutineTargets,
   subroutineAddress,
@@ -1073,11 +1070,11 @@ async function confirmRemoval(
       resolve(approved);
     };
     panel.onDidDispose(() => settle(false, false));
-    panel.webview.onDidReceiveMessage((message: RemovalReviewToHost) => {
-      const kind =
-        typeof message === 'object' && message !== null
-          ? message.kind
-          : undefined;
+    panel.webview.onDidReceiveMessage((message: unknown) => {
+      if (!isRemovalReviewToHost(message)) {
+        return;
+      }
+      const kind = message.kind;
       if (kind === 'ready') {
         void panel.webview.postMessage(review);
       } else if (kind === 'cancel') {

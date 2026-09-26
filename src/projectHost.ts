@@ -7,12 +7,17 @@ import * as vscode from 'vscode';
 
 import {
   type CliDiagnostic,
-  type Verdict,
   diagnosticRange,
   parseVerdict,
+  readCheckVerdict,
 } from './cli';
 import {cliCommand, runVerdogCommand} from './verdogCommand';
-import {projectFileReadonly, readClone, subroutineFile} from './clone';
+import {
+  isCheckSource,
+  projectFileReadonly,
+  readClone,
+  subroutineFile,
+} from './clone';
 import {graphHash} from './graph';
 import type {GraphId} from '../model/identifiers';
 import {packageDirectory} from '../model/names';
@@ -69,7 +74,6 @@ export interface HostState {
   snapshot: ProjectSnapshot | undefined;
   termination?: TerminationAnalysis;
   snapshotChanged?: () => void;
-  verdict: Verdict | undefined;
   view: vscode.WebviewView | undefined;
 }
 
@@ -720,12 +724,23 @@ export async function refresh(
   const revision = ++host.refreshRevision;
   host.termination?.suspend();
   let snapshot: ProjectSnapshot;
+  let verdict: Awaited<ReturnType<typeof readCheckVerdict>>;
   try {
     snapshot = await readClone(host.root);
+    verdict =
+      host.preview === undefined
+        ? await readCheckVerdict(
+            host.root,
+            vscode.workspace.textDocuments
+              .filter(doc => doc.isDirty)
+              .map(doc => doc.uri.fsPath),
+          )
+        : undefined;
   } catch (error) {
     if (revision !== host.refreshRevision) {
       return host.snapshot;
     }
+    invalidateCheck(host, path.join(host.root, 'project.json'));
     host.termination?.unavailable('The saved project could not be read.');
     void vscode.window.showErrorMessage(
       `Verdog: project.json could not be read: ${String(error)}`,
@@ -735,6 +750,7 @@ export async function refresh(
   if (revision !== host.refreshRevision) {
     return host.snapshot;
   }
+  const wasChecked = host.snapshot?.checked === true;
   host.snapshot = snapshot;
   host.termination ??= new TerminationAnalysis(
     signal =>
@@ -785,14 +801,16 @@ export async function refresh(
     }
   }
   host.snapshot.editable = isEditable(host);
-  if (
-    host.verdict !== undefined &&
-    host.verdict.graphHash === host.snapshot.graph_hash
-  ) {
-    host.snapshot.checked = true;
-    host.snapshot.diagnostic_count = host.verdict.diagnostics.length;
-  } else if (host.verdict !== undefined) {
-    host.verdict = undefined;
+  snapshot.checked =
+    verdict !== undefined &&
+    verdict.graphHash === snapshot.graph_hash &&
+    !vscode.workspace.textDocuments.some(
+      doc => doc.isDirty && isCheckSource(host.root, doc.uri.fsPath, snapshot),
+    );
+  if (snapshot.checked && verdict !== undefined) {
+    snapshot.diagnostic_count = verdict.diagnostics.length;
+    publish(host, host.root, verdict.diagnostics);
+  } else if (wasChecked) {
     host.problems.clear();
   }
   publishSnapshot(host);
@@ -806,6 +824,31 @@ export async function refresh(
   }
   await syncActiveEditorReadonly(host);
   return host.snapshot;
+}
+
+/** Invalidate immediately; saved-file refresh will verify the CLI receipt. */
+export function invalidateCheck(host: OpenHost, file: string): boolean {
+  const relative = path.relative(host.root, file).split(path.sep).join('/');
+  const manifest =
+    relative === 'project.json' ||
+    (relative.startsWith('external/') && relative.endsWith('/project.json'));
+  if (
+    !manifest &&
+    relative !== '.verdog/check.json' &&
+    (host.snapshot === undefined ||
+      !isCheckSource(host.root, file, host.snapshot))
+  ) {
+    return false;
+  }
+  ++host.refreshRevision;
+  if (host.snapshot === undefined) {
+    return true;
+  }
+  host.snapshot.checked = false;
+  host.snapshot.diagnostic_count = 0;
+  host.problems.clear();
+  publishSnapshot(host);
+  return true;
 }
 
 function publishSnapshot(host: HostState): void {
@@ -880,9 +923,8 @@ export async function runVerb(
   }
 
   if (structured) {
+    await refresh(host);
     const verdict = parseVerdict(result.stdout, root);
-    // A pinned check populates Problems but cannot mark the parent snapshot as checked.
-    host.verdict = root === host.root ? verdict : undefined;
     if (verdict === undefined) {
       host.output.appendLine(
         result.combined.trim() || 'verdog check produced no output.',
@@ -892,21 +934,7 @@ export async function runVerb(
         `${verdict.diagnostics.length} diagnostic(s) for graph ${verdict.graphHash.slice(0, 12)}.`,
       );
       publish(host, root, verdict.diagnostics);
-      if (root === host.root && host.snapshot !== undefined) {
-        host.snapshot.diagnostic_count = verdict.diagnostics.length;
-        host.snapshot.checked = true;
-        if (host.view !== undefined) {
-          void host.view.webview.postMessage({
-            kind: 'snapshot',
-            navigationVersion: host.canvasNavigationVersion,
-            snapshot: host.snapshot,
-          } satisfies HostToCanvas);
-        }
-      }
     }
-  }
-  if (verb === 'check') {
-    await refresh(host);
   }
   if (result.code !== 0) {
     void vscode.window.showWarningMessage(

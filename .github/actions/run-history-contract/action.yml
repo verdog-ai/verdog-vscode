@@ -1,0 +1,64 @@
+name: Check published run-history contract
+description: Compare the extension schema with the published CLI and its resolved runtime dependency.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Resolve published CLI and runtime versions
+      id: versions
+      shell: bash
+      run: |
+        python -m pip install --dry-run --ignore-installed --only-binary=:all: --quiet \
+          --report "$RUNNER_TEMP/verdog-contract.json" verdog-cli
+        python - <<'PY'
+        import json
+        import os
+        import pathlib
+
+        report = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'verdog-contract.json').read_text())
+        versions = {item['metadata']['name']: item['metadata']['version'] for item in report['install']}
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            for name in ('cli', 'runtime'):
+                print(f'{name}_ref=v{versions[f"verdog-{name}"]}', file=output)
+        PY
+
+    - uses: actions/checkout@v4
+      with:
+        repository: verdog-ai/verdog-cli
+        ref: ${{ steps.versions.outputs.cli_ref }}
+        path: .contract/verdog-cli
+        persist-credentials: false
+
+    - uses: actions/checkout@v4
+      with:
+        repository: verdog-ai/verdog-runtime
+        ref: ${{ steps.versions.outputs.runtime_ref }}
+        path: .contract/verdog-runtime
+        persist-credentials: false
+
+    - name: Record tested source revisions
+      shell: bash
+      env:
+        CLI_REF: ${{ steps.versions.outputs.cli_ref }}
+        RUNTIME_REF: ${{ steps.versions.outputs.runtime_ref }}
+      run: |
+        {
+          printf 'verdog-cli %s %s\n' "$CLI_REF" "$(git -C .contract/verdog-cli rev-parse HEAD)"
+          printf 'verdog-runtime %s %s\n' "$RUNTIME_REF" "$(git -C .contract/verdog-runtime rev-parse HEAD)"
+        } | tee run-history-contract-refs.txt >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Check run-history contract
+      shell: bash
+      env:
+        VERDOG_CONTRACT_ROOT: ${{ github.workspace }}/.contract
+      run: npm run test:integration
+
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: run-history-contract-refs
+        path: run-history-contract-refs.txt
+        if-no-files-found: ignore

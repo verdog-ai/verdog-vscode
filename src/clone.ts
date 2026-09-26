@@ -363,3 +363,35 @@ export async function readClone(root: string): Promise<ProjectSnapshot> {
     project,
   };
 }
+
+/** Saved inputs whose edits invalidate a local check, including pinned sources. */
+export function isCheckSource(
+  root: string,
+  file: string,
+  snapshot: ProjectSnapshot,
+): boolean {
+  if (
+    path
+      .relative(root, file)
+      .split(path.sep)
+      .some(part => ['.verdog', '.git', '.venv', '__pycache__'].includes(part))
+  ) {
+    return false;
+  }
+  const owners: Array<[string, CanonicalProject]> = [
+    [root, snapshot.project],
+    ...Object.entries(snapshot.pinned).map(
+      ([owner, project]): [string, CanonicalProject] => [
+        path.join(root, ...ownerRoot(owner).split('/')),
+        project,
+      ],
+    ),
+  ];
+  return owners.some(([owner, project]) => {
+    const relative = path.relative(owner, file).split(path.sep).join('/');
+    return (
+      ['project.json', 'pyproject.toml', 'ty.toml'].includes(relative) ||
+      array(project.sources).some(source => object(source).path === relative)
+    );
+  });
+}

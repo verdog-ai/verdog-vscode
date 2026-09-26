@@ -1962,7 +1962,6 @@ export function setProfileConfiguration(
     model: options.model?.trim() || null,
     reasoning_effort: options.reasoning_effort?.trim() || null,
     extra_args: [...options.extra_args],
-    ...(options.web_search === true ? {web_search: true} : {}),
   };
   return next;
 }

@@ -77,7 +77,6 @@ function profileConfiguration(
           model: options.model,
           reasoning_effort: options.reasoning_effort,
           extra_args: options.extra_args,
-          ...(options.web_search === true ? {web_search: true} : {}),
         },
       }
     : undefined;

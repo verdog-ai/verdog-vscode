@@ -99,8 +99,6 @@ export interface AgentInvokerOptions {
   model: string | null;
   reasoning_effort: string | null;
   extra_args: string[];
-  /** Lets read-only agents search and fetch the web. Absent means off. */
-  web_search?: boolean;
 }
 
 export type AgentProfileParameter = CanonicalObject & {

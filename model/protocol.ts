@@ -12,7 +12,7 @@ import type {
   NodeId,
 } from './identifiers';
 import type {AgentInvokerOptions, AgentProvider} from './project';
-import type {ResourceField} from './resources';
+import type {ResourceField, ResourceSelection} from './resources';
 import type {ProjectSnapshot} from './snapshot';
 import type {DefinitionTerminationState} from './termination';
 
@@ -188,7 +188,7 @@ export type NavigationPropertyEdit =
   | {kind: 'name'; name: string}
   | {kind: 'profile'; profile: ProfileConfiguration}
   | {kind: 'rename'; to: string}
-  | {fields: ResourceField[]; kind: 'resources'}
+  | {fields: ResourceSelection[]; kind: 'resources'}
   | {kind: 'session-persistence'; persistent: boolean}
   | {
       collection: ObservationCollection;
@@ -201,7 +201,7 @@ export type CanvasToHost =
   | {direction: 'back' | 'forward'; kind: 'navigate'}
   | {
       kind: 'browse';
-      page: NavigationPage;
+      page: Pick<NavigationPage, 'category'>;
       panel?: NavigationCategory;
       restoration?: string;
       target: NavigationTarget;
