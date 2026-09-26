@@ -34,6 +34,8 @@ and propose amendments in the conversation.
 
 # Design Constraints
 
+- Keep the user-facing `README.md` focused on capabilities and usage. Do not
+  include implementation details; place those in developer documentation.
 - Use VS Code's built-in GitHub sign-in. Do not introduce custom GitHub App
   registration, installation, or a separate authentication flow.
 - Public catalogue access is the default and requests `read:user` only. Private
