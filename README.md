@@ -38,8 +38,8 @@ motivation and limits.
 
 ## Get started
 
-Requires **VS Code 1.106+**, **Python 3.12+**, Git, and the `verdog` CLI from
-[`verdog-cli`](https://pypi.org/project/verdog-cli/).
+Requires **VS Code 1.106+**, **Python 3.12+**, Git, and **verdog-cli 0.1.1+**
+from [PyPI](https://pypi.org/project/verdog-cli/).
 
 Install the CLI with [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
@@ -47,6 +47,9 @@ Install the CLI with [uv](https://docs.astral.sh/uv/getting-started/installation
 uv tool install verdog-cli
 verdog --help
 ```
+
+For an existing installation, run `uv tool upgrade verdog-cli`. CLI 0.1.1 or newer
+is required for persisted check results and source-only catalogue inspection.
 
 Install **Verdog** from VS Code's Extensions view, then:
 
