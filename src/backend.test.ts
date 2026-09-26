@@ -17,6 +17,18 @@ async function harness() {
     defaultValue: publicOrigin,
     workspaceValue: 'https://untrusted.invalid',
   };
+  const accessSetting = {
+    globalValue: undefined as string | undefined,
+    defaultValue: 'public',
+    workspaceValue: 'private',
+  };
+  const preferenceStore = new Map<string, unknown>();
+  const commands = new Map<string, () => Promise<void>>();
+  const executed: string[] = [];
+  const prompts: Array<{message: string; detail: string}> = [];
+  const errors: string[] = [];
+  let promptChoice: string | undefined = 'Authorize';
+  let cancelAuthentication = false;
   const session = {
     id: 'github-session',
     accessToken: 'github-secret',
@@ -30,12 +42,44 @@ async function harness() {
   }) => void = () => {};
   let sessionChanged: (event: {provider: {id: string}}) => void = () => {};
   const store = new Map<string, string>();
+  class Cancelled extends Error {}
   const mock = {
-    CancellationError: class extends Error {},
+    CancellationError: Cancelled,
+    ConfigurationTarget: {Global: 1},
+    commands: {
+      registerCommand: (id: string, handler: () => Promise<void>) => {
+        commands.set(id, handler);
+        return {dispose() {}};
+      },
+      executeCommand: async (id: string) => {
+        executed.push(id);
+      },
+    },
+    window: {
+      showWarningMessage: async (
+        message: string,
+        options: {detail: string},
+      ) => {
+        prompts.push({message, detail: options.detail});
+        return promptChoice;
+      },
+      showErrorMessage: (message: string) => {
+        errors.push(message);
+      },
+    },
     workspace: {
       getConfiguration: () => ({
-        inspect: () => setting,
+        inspect: (name: string) =>
+          name === 'githubRepositoryAccess' ? accessSetting : setting,
         get: () => setting.workspaceValue,
+        update: async (name: string, value: string, target: number) => {
+          assert.equal(name, 'githubRepositoryAccess');
+          assert.equal(target, 1);
+          accessSetting.globalValue = value;
+          configurationChanged({
+            affectsConfiguration: candidate => candidate === `verdog.${name}`,
+          });
+        },
       }),
       onDidChangeConfiguration: (listener: typeof configurationChanged) => {
         configurationChanged = listener;
@@ -45,6 +89,9 @@ async function harness() {
     authentication: {
       getSession: async (...args: unknown[]) => {
         authCalls.push(args);
+        if (cancelAuthentication) {
+          throw new Cancelled();
+        }
         return github;
       },
       onDidChangeSessions: (listener: typeof sessionChanged) => {
@@ -93,6 +140,16 @@ async function harness() {
   }
   backend.initializeBackend({
     subscriptions: [],
+    globalState: {
+      get: (key: string) => preferenceStore.get(key),
+      update: async (key: string, value: unknown) => {
+        if (value === undefined) {
+          preferenceStore.delete(key);
+        } else {
+          preferenceStore.set(key, value);
+        }
+      },
+    },
     secrets: {
       get: async (key: string) => store.get(key),
       store: async (key: string, value: string) => {
@@ -105,6 +162,18 @@ async function harness() {
   } as unknown as vscode.ExtensionContext);
   return {
     backend,
+    accessSetting,
+    preferenceStore,
+    commands,
+    executed,
+    prompts,
+    errors,
+    prompt: (choice: string | undefined) => {
+      promptChoice = choice;
+    },
+    cancelAuthentication: () => {
+      cancelAuthentication = true;
+    },
     setting,
     session,
     authCalls,
@@ -364,4 +433,155 @@ test('invalid sign-in payloads are rejected before credentials reach storage', a
     );
     assert.equal(h.store.size, 0);
   }
+});
+
+test('a provider-rejected authorization forces renewal only on the next interactive request', async t => {
+  const h = await harness();
+  t.mock.method(globalThis, 'fetch', async (url: string | URL | Request) =>
+    signedIn(url),
+  );
+  await h.backend.backendSession();
+  await h.backend.rejectGitHubSession();
+  assert.equal(await h.backend.backendSession(false), undefined);
+  await h.backend.backendSession();
+  assert.deepEqual(h.authCalls.at(-1), [
+    'github',
+    ['read:user'],
+    {forceNewSession: true},
+  ]);
+});
+
+test('public mode ignores workspace scope settings and never exchanges a broader reused GitHub session', async t => {
+  const h = await harness();
+  let requests = 0;
+  t.mock.method(globalThis, 'fetch', async (url: string | URL | Request) => {
+    ++requests;
+    return signedIn(url);
+  });
+  assert.equal(h.backend.githubRepositoryAccess(), 'public');
+  h.session.scopes = ['read:user', 'repo'];
+  await assert.rejects(h.backend.backendSession(), /broader authorization/);
+  assert.equal(requests, 0);
+  assert.deepEqual(h.authCalls[0], [
+    'github',
+    ['read:user'],
+    {createIfNone: true},
+  ]);
+  assert.equal(h.store.size, 0);
+});
+
+test('private authorization confirms its destination and binds sessions to the selected mode', async t => {
+  const h = await harness();
+  t.mock.method(globalThis, 'fetch', async (url: string | URL | Request) =>
+    signedIn(url),
+  );
+  await h.backend.backendSession();
+  h.session.scopes = ['read:user', 'repo'];
+  await h.commands.get('verdog.authorizePrivateRepositories')!();
+  assert.equal(h.errors.length, 0);
+  assert.equal(h.backend.githubRepositoryAccess(), 'private');
+  assert.match(h.prompts[0].message, /https:\/\/157\.180\.79\.112/);
+  assert.match(h.prompts[0].detail, /read and write access/);
+  assert.match(
+    h.prompts[0].detail,
+    /token will be sent to https:\/\/157\.180\.79\.112/,
+  );
+  assert.deepEqual(h.authCalls.at(-1), [
+    'github',
+    ['read:user', 'repo'],
+    {createIfNone: true},
+  ]);
+  assert.equal(
+    h.store.size,
+    0,
+    'the prior public backend session is invalidated',
+  );
+  await h.backend.backendSession();
+  assert.equal(
+    JSON.parse(h.store.get('verdog.backendSession')!).repositoryAccess,
+    'private',
+  );
+  assert.deepEqual(h.executed, ['verdog.refreshCatalogue']);
+
+  await h.commands.get('verdog.usePublicCatalogueAccess')!();
+  assert.equal(h.backend.githubRepositoryAccess(), 'public');
+  assert.equal(h.preferenceStore.size, 0);
+  assert.equal(h.store.size, 0);
+  h.session.scopes = ['read:user'];
+  await h.backend.backendSession();
+  assert.deepEqual(h.authCalls.at(-1), [
+    'github',
+    ['read:user'],
+    {forceNewSession: true},
+  ]);
+  assert.equal(
+    JSON.parse(h.store.get('verdog.backendSession')!).repositoryAccess,
+    'public',
+  );
+});
+
+test('cancelled private authorization leaves public mode and its credentials intact', async t => {
+  const h = await harness();
+  t.mock.method(globalThis, 'fetch', async (url: string | URL | Request) =>
+    signedIn(url),
+  );
+  await h.backend.backendSession();
+  const saved = h.store.get('verdog.backendSession');
+  h.prompt(undefined);
+  await h.commands.get('verdog.authorizePrivateRepositories')!();
+  assert.equal(h.authCalls.length, 1);
+  assert.equal(h.backend.githubRepositoryAccess(), 'public');
+  assert.equal(h.store.get('verdog.backendSession'), saved);
+  h.prompt('Authorize');
+  h.cancelAuthentication();
+  await h.commands.get('verdog.authorizePrivateRepositories')!();
+  assert.equal(h.backend.githubRepositoryAccess(), 'public');
+  assert.equal(h.preferenceStore.size, 0);
+  assert.equal(h.errors.length, 0);
+});
+
+test('a changed private destination or account requires new explicit consent before token exchange', async t => {
+  const h = await harness();
+  let requests = 0;
+  t.mock.method(globalThis, 'fetch', async (url: string | URL | Request) => {
+    ++requests;
+    return signedIn(url);
+  });
+  h.session.scopes = ['read:user', 'repo'];
+  await h.commands.get('verdog.authorizePrivateRepositories')!();
+  await h.backend.backendSession();
+  const before = requests;
+  h.changeOrigin('https://another.example');
+  await assert.rejects(
+    h.backend.backendSession(),
+    /approve sending.*https:\/\/another\.example/,
+  );
+  assert.equal(requests, before);
+  await h.commands.get('verdog.authorizePrivateRepositories')!();
+  await h.backend.backendSession();
+  const approved = requests;
+  h.changeAccount();
+  await assert.rejects(h.backend.backendSession(), /for this GitHub account/);
+  assert.equal(requests, approved);
+  assert.equal(h.store.size, 0);
+});
+
+test('private mode cannot be enabled by a setting alone or expanded to unrelated GitHub scopes', async t => {
+  const h = await harness();
+  let requests = 0;
+  t.mock.method(globalThis, 'fetch', async (url: string | URL | Request) => {
+    ++requests;
+    return signedIn(url);
+  });
+  h.accessSetting.globalValue = 'private';
+  await assert.rejects(
+    h.backend.backendSession(),
+    /Authorize Private Repository Access/,
+  );
+  assert.equal(h.authCalls.length, 0);
+  h.session.scopes = ['read:user', 'repo', 'admin:org'];
+  await h.commands.get('verdog.authorizePrivateRepositories')!();
+  assert.equal(h.preferenceStore.size, 0);
+  assert.equal(requests, 0);
+  assert.match(h.errors[0], /requested read:user and repo/);
 });

@@ -7,7 +7,7 @@
  * explicit, atomically-written state rather than the accidental presence of `project.json`.
  */
 
-import {lstat} from 'node:fs/promises';
+import {lstat, readdir, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import * as path from 'node:path';
 
@@ -23,6 +23,7 @@ import {githubRemoteMatches} from './githubRemote';
 import {
   INSPECTION_MARKER,
   MARKER,
+  PREVIEW_WORKSPACE_DIRECTORY,
   type InspectionState,
   type Preview,
   checkoutRoot,
@@ -33,10 +34,11 @@ import {
 export {
   INSPECTION_MARKER,
   MARKER,
+  PREVIEW_DIRECTORY,
+  PREVIEW_WORKSPACE_DIRECTORY,
   type InspectionState,
   type Preview,
   checkoutRoot,
-  interpreterIn,
   previewWorkspace,
 } from './preview';
 
@@ -95,11 +97,10 @@ export async function readInspectionState(
       Buffer.from(raw).toString('utf8'),
     ) as Partial<InspectionState>;
     if (
-      value.version !== 1 ||
+      value.version !== 2 ||
       value.source !== 'ready' ||
       value.preview === undefined ||
       !['ready', 'incomplete'].includes(value.dependencies ?? '') ||
-      !['ready', 'incomplete'].includes(value.environment ?? '') ||
       !['ready', 'mismatch', 'unchecked'].includes(value.metadata ?? '') ||
       (expected !== undefined && !samePreview(value.preview, expected))
     ) {
@@ -127,7 +128,7 @@ async function markPreview(
 ): Promise<void> {
   await atomicWrite(
     vscode.Uri.file(path.join(folder.fsPath, MARKER)),
-    `${JSON.stringify(preview, undefined, 2)}\n`,
+    `${JSON.stringify({repository: preview.repository, commit: preview.commit, workflow: preview.workflow}, undefined, 2)}\n`,
   );
 }
 
@@ -182,10 +183,15 @@ async function changeMode(
   mode: 'a-w' | 'u+w',
   log: (line: string) => void,
 ): Promise<void> {
+  const status = await lstat(root);
+  if (!status.isDirectory() || status.isSymbolicLink()) {
+    throw new Error('The preview root must be a real directory.');
+  }
   const entries = await vscode.workspace.fs.readDirectory(
     vscode.Uri.file(root),
   );
   const changed = entries
+    .filter(([, type]) => !(type & vscode.FileType.SymbolicLink))
     .map(([name]) => name)
     .filter(name => !['.git', '.verdog', '.venv'].includes(name));
   if (changed.length === 0) {
@@ -209,54 +215,68 @@ export function lockPreview(
   return changeMode(root, 'a-w', log);
 }
 
-/** Restore only a previously locked, extension-generated editor environment. */
-export async function preparePreviewEnvironment(
+/** Refuse managed environments in publisher source or a reused inspection checkout. */
+export async function sourceOnlyProblem(
   root: string,
-  log: (line: string) => void,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  const name = '.venv';
-  const location = path.join(root, name);
-  try {
-    const status = await lstat(location);
-    if (!status.isDirectory()) {
-      log(
-        'managed preview environment is not a real directory; refusing to change its permissions',
-      );
-      return false;
+): Promise<string | undefined> {
+  const status = await lstat(root);
+  if (!status.isDirectory() || status.isSymbolicLink()) {
+    return 'The preview root must be a real directory.';
+  }
+  for (const entry of await readdir(root, {withFileTypes: true})) {
+    if (entry.name === '.git') {
+      continue;
     }
+    const location = path.join(root, entry.name);
+    if (
+      entry.name === '.venv' ||
+      (entry.name === '.verdog' && entry.isSymbolicLink())
+    ) {
+      return `Source-only inspection refuses ${entry.name}; import into a trusted project to prepare an environment.`;
+    }
+    if (entry.name === '.verdog' && entry.isDirectory()) {
+      try {
+        await lstat(path.join(location, 'environments'));
+        return 'Source-only inspection refuses .verdog/environments; import into a trusted project to prepare an environment.';
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
+      }
+    }
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      const problem = await sourceOnlyProblem(location);
+      if (problem !== undefined) {
+        return problem;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Await actual removal; VS Code's provider may move files and discard later deletion errors. */
+export async function deleteCache(root: string): Promise<void> {
+  let status;
+  try {
+    status = await lstat(root);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return true;
+      return;
     }
-    log(`managed preview environment could not be inspected: ${String(error)}`);
-    return false;
+    throw error;
   }
-
-  const tracked = await git(root, ['ls-files', '--', name], signal);
-  if (tracked.code !== 0) {
-    log(
-      `managed preview environment ownership could not be verified: ${tracked.combined.trim()}`,
-    );
-    return false;
+  if (status.isDirectory() && !status.isSymbolicLink()) {
+    // chmod does not follow links encountered below this verified real directory.
+    const writable = await verdog(root, ['-R', 'u+w', '--', '.'], {
+      command: ['chmod'],
+    });
+    if (writable.code !== 0 && writable.code !== 127) {
+      throw new Error(
+        `Could not unlock the catalogue cache: ${writable.combined.trim()}`,
+      );
+    }
   }
-  if (tracked.stdout.trim()) {
-    log(
-      'source tracks .venv; refusing to treat it as generated environment state',
-    );
-    return false;
-  }
-  const writable = await verdog(root, ['-R', 'u+w', '--', name], {
-    command: ['chmod'],
-    signal,
-  });
-  if (writable.code !== 0 && writable.code !== 127) {
-    log(
-      `managed preview environment could not be made writable: ${writable.combined.trim()}`,
-    );
-    return false;
-  }
-  return true;
+  await rm(root, {recursive: true, force: true});
 }
 
 /**
@@ -278,6 +298,15 @@ export async function materialise(
   const folder = vscode.Uri.file(root);
   options.phase?.('Fetching exact source');
   await vscode.workspace.fs.createDirectory(folder);
+  for (const location of [path.dirname(root), root]) {
+    const status = await lstat(location);
+    if (!status.isDirectory() || status.isSymbolicLink()) {
+      log(
+        'The preview cache must contain real directories, not symbolic links.',
+      );
+      return undefined;
+    }
+  }
   if (
     !(await ensureRepository(root, preview.repository, options.signal, log))
   ) {
@@ -368,11 +397,10 @@ export async function materialise(
       ? {}
       : {catalogue: existing.catalogue}),
     dependencies,
-    environment: existing?.environment ?? 'incomplete',
     metadata: existing?.metadata ?? 'unchecked',
     preview,
     source: 'ready',
-    version: 1,
+    version: 2,
   });
   return {dependencies, folder};
 }
@@ -382,7 +410,6 @@ export async function configurePreviewWorkspace(
   storage: vscode.Uri,
   root: string,
   preview: Preview,
-  interpreter: string | undefined,
 ): Promise<vscode.Uri> {
   const location = vscode.Uri.file(
     previewWorkspace(
@@ -390,12 +417,17 @@ export async function configurePreviewWorkspace(
       preview.repository,
       preview.commit,
       preview.workflow,
+      preview.origin,
     ),
   );
   await vscode.workspace.fs.createDirectory(
     vscode.Uri.file(path.dirname(location.fsPath)),
   );
-  await atomicWrite(location, workspace(preview, root, interpreter));
+  await atomicWrite(location, workspace(preview, root));
+  await atomicWrite(
+    vscode.Uri.file(`${location.fsPath}.json`),
+    JSON.stringify(preview),
+  );
   return location;
 }
 
@@ -474,11 +506,63 @@ export async function readMarker(root: string): Promise<Preview | undefined> {
     }
     return {
       commit: value.commit,
-      ...(typeof value.origin === 'string' ? {origin: value.origin} : {}),
       repository: value.repository,
       workflow: typeof value.workflow === 'string' ? value.workflow : '',
     };
   } catch {
     return undefined;
+  }
+}
+
+/** Import destinations belong to one generated workspace, never the shared checkout. */
+export async function readPreview(
+  root: string,
+  storage: vscode.Uri,
+  workspaceFile: vscode.Uri | undefined,
+): Promise<Preview | undefined> {
+  const marker = await readMarker(root);
+  if (marker === undefined || workspaceFile?.scheme !== 'file') {
+    return marker;
+  }
+  if (
+    path.dirname(workspaceFile.fsPath) !==
+    path.join(storage.fsPath, PREVIEW_WORKSPACE_DIRECTORY)
+  ) {
+    return marker;
+  }
+  try {
+    const raw = await vscode.workspace.fs.readFile(
+      vscode.Uri.file(`${workspaceFile.fsPath}.json`),
+    );
+    const launch = JSON.parse(Buffer.from(raw).toString('utf8')) as Preview;
+    if (
+      !samePreview(marker, launch) ||
+      (launch.origin !== undefined &&
+        (typeof launch.origin !== 'string' ||
+          !path.isAbsolute(launch.origin))) ||
+      path.resolve(root) !==
+        checkoutRoot(
+          storage.fsPath,
+          marker.repository,
+          marker.commit,
+          marker.workflow,
+        ) ||
+      workspaceFile.fsPath !==
+        previewWorkspace(
+          storage.fsPath,
+          marker.repository,
+          marker.commit,
+          marker.workflow,
+          launch.origin,
+        )
+    ) {
+      return marker;
+    }
+    return {
+      ...marker,
+      ...(launch.origin === undefined ? {} : {origin: launch.origin}),
+    };
+  } catch {
+    return marker;
   }
 }

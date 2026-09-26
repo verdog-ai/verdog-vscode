@@ -46,6 +46,7 @@ async function load<T>(
   mocks = {
     './backend': {
       backendOrigin: () => 'https://157.180.79.112',
+      rejectGitHubSession: async () => undefined,
       backendSession: async () => ({
         origin: 'https://157.180.79.112',
         token: 'test-session',
@@ -1202,4 +1203,122 @@ test('host navigation shares history dispatch, prunes branches, and acknowledges
     kind: 'navigate',
     direction: 'forward',
   });
+});
+
+test('trusted previews never analyze, select Python, check, sync, or run', async () => {
+  let calls = 0;
+  const module = await load<typeof import('./projectHost')>('projectHost.ts', {
+    vscode: {
+      workspace: {isTrusted: true},
+      commands: {},
+      window: {showWarningMessage() {}},
+      extensions: {
+        getExtension: () => {
+          ++calls;
+        },
+      },
+    },
+    './clone': {
+      readClone: async () => snapshot('graph'),
+      projectFileReadonly() {},
+      subroutineFile() {},
+    },
+    './verdogCommand': {
+      cliCommand: () => ['verdog'],
+      runVerdogCommand: async () => {
+        ++calls;
+        return {code: 0, stdout: '', stderr: '', combined: ''};
+      },
+    },
+  });
+  const state: OpenHost = {
+    ...host(),
+    preview: {
+      repository: 'owner/project',
+      commit: 'a'.repeat(40),
+      workflow: 'main',
+    },
+  };
+  try {
+    await module.refresh(state);
+    await module.selectWorkflowEnvironment(
+      state,
+      {} as Parameters<typeof module.selectWorkflowEnvironment>[1],
+    );
+    for (const verb of ['check', 'sync', 'run'] as const) {
+      await module.runVerb(state, state.root, verb);
+    }
+    await delay(300);
+    assert.equal(calls, 0);
+    assert.equal(state.snapshot?.editable, false);
+    assert.equal(state.snapshot?.termination?.status, 'unavailable');
+  } finally {
+    state.termination?.dispose();
+  }
+});
+
+test('preview run history never starts a CLI process or execution command', async () => {
+  let calls = 0;
+  const commands = new Map<string, () => Promise<void>>();
+  const disposable = {dispose() {}};
+  const {registerRunHistory} = await load<typeof import('./runHistoryView')>(
+    'runHistoryView.ts',
+    {
+      vscode: {
+        workspace: {
+          isTrusted: true,
+          createFileSystemWatcher: () => {
+            throw new Error('Preview must not watch local runs');
+          },
+        },
+        commands: {
+          registerCommand: (id: string, handler: () => Promise<void>) => {
+            commands.set(id, handler);
+            return disposable;
+          },
+        },
+        window: {
+          createTreeView: () => ({...disposable, message: ''}),
+          showWarningMessage() {},
+        },
+        EventEmitter: class {
+          event() {
+            return disposable;
+          }
+          fire() {}
+          dispose() {}
+        },
+      },
+      './verdogCommand': {
+        runVerdogCommand: async () => {
+          ++calls;
+          return {code: 0, stdout: '', stderr: '', combined: ''};
+        },
+      },
+    },
+  );
+  const state: OpenHost = {
+    ...host(),
+    preview: {
+      repository: 'owner/project',
+      commit: 'a'.repeat(40),
+      workflow: 'main',
+    },
+  };
+  const subscriptions = registerRunHistory(state);
+  try {
+    for (const command of [
+      'verdog.refreshRuns',
+      'verdog.resumeRun',
+      'verdog.restartRun',
+      'verdog.forkRun',
+    ]) {
+      await commands.get(command)!();
+    }
+    assert.equal(calls, 0);
+  } finally {
+    for (const subscription of subscriptions) {
+      subscription.dispose();
+    }
+  }
 });

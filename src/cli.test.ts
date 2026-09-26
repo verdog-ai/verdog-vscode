@@ -165,7 +165,7 @@ test('backend origin is explicit and session credentials travel only through std
       'catalogue',
     ]);
     assert.equal(received.origin, 'http://127.0.0.1:18765');
-    assert.equal(received.inputFlag, token === undefined ? undefined : '1');
+    assert.equal(received.inputFlag, token === undefined ? '0' : '1');
     assert.equal(received.leaked, false);
     assert.equal(received.tokenReceived, token !== undefined);
   }

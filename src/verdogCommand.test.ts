@@ -16,6 +16,7 @@ async function load<T>(
   mocks = {
     './backend': {
       backendOrigin: () => 'https://157.180.79.112',
+      rejectGitHubSession: async () => undefined,
       backendSession: async () => undefined,
     },
     ...mocks,
@@ -124,7 +125,10 @@ test('workspace trust blocks invocation unless the caller already verified trust
     vscode: {
       workspace: {
         isTrusted: false,
-        getConfiguration: () => ({get: () => ['verdog']}),
+        getConfiguration: () => ({
+          get: () => ['verdog'],
+          inspect: () => ({globalValue: ['verdog']}),
+        }),
       },
       window: {showWarningMessage: (message: string) => warnings.push(message)},
     },
@@ -165,7 +169,10 @@ test('structured commands suppress stdout while stderr reaches output and progre
     vscode: {
       workspace: {
         isTrusted: true,
-        getConfiguration: () => ({get: () => ['verdog']}),
+        getConfiguration: () => ({
+          get: () => ['verdog'],
+          inspect: () => ({globalValue: ['verdog']}),
+        }),
       },
       window: {
         withProgress: (
@@ -243,7 +250,10 @@ test('editor and external cancellation both abort the process signal and dispose
     vscode: {
       workspace: {
         isTrusted: true,
-        getConfiguration: () => ({get: () => ['verdog']}),
+        getConfiguration: () => ({
+          get: () => ['verdog'],
+          inspect: () => ({globalValue: ['verdog']}),
+        }),
       },
       window: {
         withProgress: (
@@ -308,9 +318,17 @@ test('compiler calls are anonymous and catalogue calls use an origin-bound sessi
     [];
   const interactive: boolean[] = [];
   const module = await load<typeof import('./verdogCommand')>({
-    vscode: {workspace: {getConfiguration: () => ({get: () => ['verdog']})}},
+    vscode: {
+      workspace: {
+        getConfiguration: () => ({
+          get: () => ['verdog'],
+          inspect: () => ({globalValue: ['verdog']}),
+        }),
+      },
+    },
     './backend': {
       backendOrigin: () => 'https://157.180.79.112',
+      rejectGitHubSession: async () => undefined,
       backendSession: async (prompt: boolean) => {
         interactive.push(prompt);
         return prompt
@@ -367,4 +385,79 @@ test('compiler calls are anonymous and catalogue calls use an origin-bound sessi
     origin: 'https://157.180.79.112',
     token: 'session-for-test',
   });
+});
+
+test('source description launches a user-only command outside the checkout', async () => {
+  const calls: Array<{root: string; args: string[]; command: string[]}> = [];
+  const module = await load<typeof import('./verdogCommand')>({
+    vscode: {
+      workspace: {
+        getConfiguration: () => ({
+          get: () => ['/publisher/command'],
+          inspect: () => ({globalValue: ['/trusted/verdog']}),
+        }),
+      },
+    },
+    './cli': {
+      verdog: async (
+        root: string,
+        args: string[],
+        options: {command: string[]},
+      ) => {
+        calls.push({root, args, command: options.command});
+        return success();
+      },
+    },
+  });
+  const args = [
+    'describe',
+    'main',
+    '--project',
+    '/untrusted/checkout',
+    '--json',
+  ];
+  await module.backendCommand('/untrusted/checkout', args, {
+    command: ['/publisher/command'],
+  });
+  assert.deepEqual(calls, [
+    {root: homedir(), args, command: ['/trusted/verdog']},
+  ]);
+});
+
+test('rejected GitHub authorization requests renewal and keeps an actionable auth envelope', async () => {
+  let renewed = false;
+  const module = await load<typeof import('./verdogCommand')>({
+    vscode: {
+      workspace: {
+        getConfiguration: () => ({inspect: () => ({globalValue: ['verdog']})}),
+      },
+    },
+    './backend': {
+      backendOrigin: () => 'https://service.example',
+      backendSession: async () => ({
+        origin: 'https://service.example',
+        token: 'test-session',
+      }),
+      rejectGitHubSession: async () => {
+        renewed = true;
+      },
+    },
+    './cli': {
+      verdog: async () => ({
+        code: 1,
+        stdout: JSON.stringify({
+          error: {code: 'github.token', message: 'rejected'},
+        }),
+        stderr: '',
+        combined: '',
+      }),
+    },
+  });
+  const result = await module.backendCommand('/project', [
+    'catalogue',
+    '--json',
+  ]);
+  assert.equal(renewed, true);
+  assert.equal(JSON.parse(result.stdout).error.code, 'github.token');
+  assert.match(result.combined, /Sign in with GitHub again/);
 });

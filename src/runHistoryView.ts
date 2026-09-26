@@ -260,12 +260,15 @@ class RunHistoryProvider
         this.changed.fire();
         return;
       }
-      if (!vscode.workspace.isTrusted) {
+      if (this.host.preview !== undefined || !vscode.workspace.isTrusted) {
         this.items = [];
         this.runs = [];
         this.initialized = true;
         if (this.view !== undefined) {
-          this.view.message = 'Trust this workspace to read local runs.';
+          this.view.message =
+            this.host.preview === undefined
+              ? 'Trust this workspace to read local runs.'
+              : 'Import into a trusted project to run this workflow.';
         }
         this.changed.fire();
         return;
@@ -439,7 +442,7 @@ class RunHistoryProvider
     cancellable: boolean,
   ): Promise<Outcome> {
     const root = this.host.root;
-    if (root === undefined) {
+    if (root === undefined || this.host.preview !== undefined) {
       return {code: 1, combined: '', stderr: '', stdout: ''};
     }
     return runVerdogCommand(root, args, {
@@ -457,13 +460,19 @@ class RunHistoryProvider
 }
 
 function trusted(host: HostState, verb: string): boolean {
-  if (host.root !== undefined && vscode.workspace.isTrusted) {
+  if (
+    host.root !== undefined &&
+    host.preview === undefined &&
+    vscode.workspace.isTrusted
+  ) {
     return true;
   }
   void vscode.window.showWarningMessage(
-    host.root === undefined
-      ? 'Open a Verdog project first.'
-      : `Trust this workspace before running \`verdog ${verb}\`.`,
+    host.preview !== undefined
+      ? 'Import into a trusted project to run this workflow.'
+      : host.root === undefined
+        ? 'Open a Verdog project first.'
+        : `Trust this workspace before running \`verdog ${verb}\`.`,
   );
   return false;
 }
@@ -831,7 +840,7 @@ export function registerRunHistory(host: HostState): vscode.Disposable[] {
     fork,
     open,
   ];
-  if (host.root !== undefined) {
+  if (host.root !== undefined && host.preview === undefined) {
     const watchers = [
       vscode.workspace.createFileSystemWatcher(
         new vscode.RelativePattern(

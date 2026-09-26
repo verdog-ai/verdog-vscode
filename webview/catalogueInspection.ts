@@ -8,7 +8,7 @@ export function inspectionFooterText(inspection: CatalogueInspection): string {
     case 'idle':
       return 'Metadata and README only. No worktree, environment, dependency, or workflow code has been created or executed.';
     case 'ready':
-      return 'Source and wheel-only environment prepared in the Verdog cache. Workflow code has not been run.';
+      return 'Exact source and metadata verified. Import into a trusted project to install dependencies and run code.';
     case 'running':
     case 'incomplete':
     case 'mismatch':

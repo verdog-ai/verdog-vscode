@@ -2,7 +2,7 @@
 
 import * as path from 'node:path';
 import {constants as fsConstants} from 'node:fs';
-import {access as accessFile} from 'node:fs/promises';
+import {access as accessFile, lstat} from 'node:fs/promises';
 
 import * as vscode from 'vscode';
 
@@ -11,11 +11,13 @@ import {
   configurePreviewWorkspace,
   lockPreview,
   materialise,
-  preparePreviewEnvironment,
+  deleteCache,
+  sourceOnlyProblem,
+  PREVIEW_DIRECTORY,
+  PREVIEW_WORKSPACE_DIRECTORY,
   openPreviewWorkspace,
   readInspectionState,
   readMarker,
-  previewWorkspace,
   writeInspectionState,
 } from './checkout';
 import {fetchCatalogueReadme} from './catalogueMetadata';
@@ -23,10 +25,6 @@ import {
   catalogueImportReceiptMatches,
   decodeCatalogueImportReceipt,
 } from './catalogueReceipt';
-import {
-  catalogueSyncPaths,
-  decodeCatalogueSyncReceipt,
-} from './catalogueSyncReceipt';
 import {catalogueTargetEligible} from './catalogueTargets';
 import type {Outcome} from './cli';
 import {backendCommand as verdog} from './verdogCommand';
@@ -35,7 +33,6 @@ import {
   cliCommand,
   isEditable,
   refresh,
-  runVerb,
   type HostState,
   type OpenHost,
 } from './projectHost';
@@ -57,6 +54,7 @@ import {packageProblem} from '../model/names';
 import type {CatalogueToHost, HostToCatalogue} from '../model/protocol';
 
 const REFUSED = [
+  'verdog.run',
   'verdog.check',
   'verdog.access',
   'verdog.addNode',
@@ -132,7 +130,7 @@ async function catalogueOutcome(
   if (args.length > 2) {
     args.push('--limit', '50');
   }
-  return verdog(root, args, {command: cliCommand(), interactive});
+  return verdog(root, args, {command: cliCommand(true), interactive});
 }
 
 async function readCatalogue(
@@ -191,7 +189,7 @@ async function readEntry(
   const root =
     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
   const result = await verdog(root, ['catalogue', '--entry', id, '--json'], {
-    command: cliCommand(),
+    command: cliCommand(true),
   });
   if (result.code !== 0) {
     const failure = cliFailure(result);
@@ -215,14 +213,6 @@ async function exists(file: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-async function availableInterpreter(
-  root: string,
-  workflow: string,
-): Promise<string | undefined> {
-  const candidate = catalogueSyncPaths(root, workflow).interpreter;
-  return (await exists(candidate)) ? candidate : undefined;
 }
 
 function previewOf(host: HostState, detail: CatalogueDetail) {
@@ -257,6 +247,23 @@ class CatalogueRecordPanel {
     this.releases = summary.releases;
     this.ensurePanel(summary.display_name);
     await this.select(summary.id);
+  }
+
+  clear(): void {
+    ++this.revision;
+    this.readmeAbort?.abort();
+    this.inspectionAbort?.abort();
+    this.releases = [];
+    this.record = {
+      documentation: {
+        state: 'unavailable',
+        detail: 'Sign in to reload this release.',
+      },
+      inspection: {state: 'idle'},
+      requested: '',
+      state: 'unavailable',
+    };
+    this.post();
   }
 
   private ensurePanel(title: string): vscode.WebviewPanel {
@@ -334,16 +341,15 @@ class CatalogueRecordPanel {
         state: 'mismatch',
       };
     }
-    if (
-      state.dependencies === 'ready' &&
-      state.metadata === 'ready' &&
-      state.environment === 'ready' &&
-      (await availableInterpreter(cached, detail.workflow_id)) !== undefined
-    ) {
+    const sourceProblem = await sourceOnlyProblem(cached);
+    if (sourceProblem !== undefined) {
+      return {detail: sourceProblem, state: 'incomplete'};
+    }
+    if (state.dependencies === 'ready' && state.metadata === 'ready') {
       return {folder: cached, state: 'ready'};
     }
     return {
-      detail: 'Inspection was interrupted or the environment is incomplete.',
+      detail: 'Inspection was interrupted or the source is incomplete.',
       folder: cached,
       state: 'incomplete',
     };
@@ -388,11 +394,15 @@ class CatalogueRecordPanel {
         Date.parse(right.published_at) - Date.parse(left.published_at),
     );
     detail.releases = this.releases;
-    this.panel!.title = detail.display_name;
+    const inspection = await this.cachedInspection(detail);
+    if (revision !== this.revision || this.panel === undefined) {
+      return;
+    }
+    this.panel.title = detail.display_name;
     this.record = {
       detail,
       documentation: {state: 'loading'},
-      inspection: await this.cachedInspection(detail),
+      inspection,
       requested: id,
       state: 'ready',
     };
@@ -466,6 +476,7 @@ class CatalogueRecordPanel {
             line => this.host.output.appendLine(line),
             {phase, signal: controller.signal},
           );
+          root = checkout?.folder.fsPath;
           if (revision !== this.revision) {
             return;
           }
@@ -489,16 +500,25 @@ class CatalogueRecordPanel {
             return;
           }
 
+          const sourceProblem = await sourceOnlyProblem(root);
+          if (sourceProblem !== undefined) {
+            this.updateInspection({detail: sourceProblem, state: 'incomplete'});
+            return;
+          }
+
           phase('Verifying published metadata');
           const described = await verdog(
             root,
-            ['describe', detail.workflow_id, '--json'],
+            ['describe', detail.workflow_id, '--project', root, '--json'],
             {
-              command: cliCommand(),
+              command: cliCommand(true),
               onLine: line => this.host.output.appendLine(line),
               signal: controller.signal,
             },
           );
+          if (revision !== this.revision) {
+            return;
+          }
           if (described.code !== 0) {
             await this.finishIncomplete(
               root,
@@ -529,18 +549,16 @@ class CatalogueRecordPanel {
             await writeInspectionState(root, {
               catalogue: catalogueMetadataKey(detail),
               dependencies: 'ready',
-              environment: 'incomplete',
               metadata: 'mismatch',
               preview,
               source: 'ready',
-              version: 1,
+              version: 2,
             });
             await lockPreview(root, line => this.host.output.appendLine(line));
             await configurePreviewWorkspace(
               this.context.globalStorageUri,
               root,
               preview,
-              undefined,
             );
             this.updateInspection({
               detail: `Published metadata differs from source: ${differences.join(', ')}.`,
@@ -550,68 +568,18 @@ class CatalogueRecordPanel {
             return;
           }
 
-          phase('Preparing the selected workflow environment');
-          const environmentWritable = await preparePreviewEnvironment(
-            root,
-            line => this.host.output.appendLine(line),
-            controller.signal,
-          );
-          if (!environmentWritable) {
-            await this.finishIncomplete(
-              root,
-              preview,
-              controller.signal.aborted
-                ? 'Inspection was cancelled.'
-                : 'The managed editor environment could not be prepared safely. See the Verdog output.',
-              'ready',
-            );
-            return;
-          }
-          const synced = await verdog(
-            root,
-            ['sync', detail.workflow_id, '--only-binary', '--json'],
-            {
-              command: cliCommand(),
-              onLine: line => this.host.output.appendLine(line),
-              signal: controller.signal,
-            },
-          );
-          const receipt =
-            synced.code === 0
-              ? decodeCatalogueSyncReceipt(synced.stdout, {
-                  checkout: root,
-                  workflow: detail.workflow_id,
-                })
-              : undefined;
-          const interpreter =
-            receipt !== undefined && (await exists(receipt.interpreter))
-              ? receipt.interpreter
-              : undefined;
-          if (synced.code !== 0 || interpreter === undefined) {
-            const why = controller.signal.aborted
-              ? 'Inspection was cancelled.'
-              : synced.code === 0
-                ? receipt === undefined
-                  ? 'The CLI returned an invalid selected-workflow environment receipt.'
-                  : 'The selected workflow environment contains no Python interpreter.'
-                : `The wheel-only environment could not be prepared: ${cliFailure(synced).message}`;
-            await this.finishIncomplete(root, preview, why, 'ready');
-            return;
-          }
           await writeInspectionState(root, {
             catalogue: catalogueMetadataKey(detail),
             dependencies: 'ready',
-            environment: 'ready',
             metadata: 'ready',
             preview,
             source: 'ready',
-            version: 1,
+            version: 2,
           });
           await configurePreviewWorkspace(
             this.context.globalStorageUri,
             root,
             preview,
-            interpreter,
           );
           await lockPreview(root, line => this.host.output.appendLine(line));
           if (revision !== this.revision) {
@@ -645,17 +613,15 @@ class CatalogueRecordPanel {
         ? {}
         : {catalogue: catalogueMetadataKey(this.record.detail)}),
       dependencies: previous?.dependencies ?? 'incomplete',
-      environment: 'incomplete',
       metadata,
       preview,
       source: 'ready',
-      version: 1,
+      version: 2,
     });
     await configurePreviewWorkspace(
       this.context.globalStorageUri,
       root,
       preview,
-      undefined,
     );
     this.updateInspection({detail, folder: root, state: 'incomplete'});
   }
@@ -670,15 +636,15 @@ class CatalogueRecordPanel {
       return;
     }
     const preview = previewOf(this.host, detail);
-    const interpreter =
-      this.record.inspection.state === 'ready'
-        ? await availableInterpreter(folder, detail.workflow_id)
-        : undefined;
+    const sourceProblem = await sourceOnlyProblem(folder);
+    if (sourceProblem !== undefined) {
+      this.updateInspection({detail: sourceProblem, state: 'incomplete'});
+      return;
+    }
     const workspace = await configurePreviewWorkspace(
       this.context.globalStorageUri,
       folder,
       preview,
-      interpreter,
     );
     this.host.output.appendLine(
       `opening inspected release from ${workspace.fsPath}`,
@@ -771,7 +737,7 @@ class CatalogueRecordPanel {
     ];
     this.host.output.appendLine(`\n$ verdog ${args.join(' ')}  (${root})`);
     const result = await verdog(root, args, {
-      command: cliCommand(),
+      command: cliCommand(true),
       onLine: line => this.host.output.appendLine(line),
     });
     const imported = decodeCatalogueImportReceipt(result.stdout);
@@ -818,9 +784,11 @@ class CatalogueRecordPanel {
     };
     this.post();
     const actions =
-      root === this.host.root
-        ? ['Reveal binding', 'Add workflow call', 'Sync environment']
-        : ['Reveal binding', 'Sync environment'];
+      this.host.preview !== undefined
+        ? ['Reveal binding', 'Open Target Project']
+        : root === this.host.root
+          ? ['Reveal binding', 'Add workflow call', 'Sync environment']
+          : ['Reveal binding', 'Open Target Project'];
     const next = generationFailed
       ? await vscode.window.showWarningMessage(
           `Imported ${detail.workflow_id} as ${imported.alias}, but generation reported problems. See the Verdog output.`,
@@ -837,6 +805,12 @@ class CatalogueRecordPanel {
       await vscode.window.showTextDocument(document);
     } else if (next === 'Add workflow call') {
       await vscode.commands.executeCommand('verdog.addCall');
+    } else if (next === 'Open Target Project') {
+      await vscode.commands.executeCommand(
+        'vscode.openFolder',
+        vscode.Uri.file(root),
+        {forceNewWindow: true},
+      );
     } else if (next === 'Sync environment') {
       await syncTarget(root, this.host);
     }
@@ -994,7 +968,7 @@ async function chooseTargetProject(
 }
 
 async function syncTarget(root: string, host: HostState): Promise<void> {
-  if (!vscode.workspace.isTrusted) {
+  if (host.preview !== undefined || !vscode.workspace.isTrusted) {
     void vscode.window.showWarningMessage(
       'The workflow was imported, but Workspace Trust is required before Verdog installs ' +
         'its dependencies.',
@@ -1004,7 +978,7 @@ async function syncTarget(root: string, host: HostState): Promise<void> {
   host.output.show(true);
   host.output.appendLine(`\n$ verdog sync  (${root})`);
   const result = await verdog(root, ['sync'], {
-    command: cliCommand(),
+    command: cliCommand(true),
     onLine: line => host.output.appendLine(line),
   });
   if (result.code !== 0) {
@@ -1028,6 +1002,7 @@ async function openExternal(href: string): Promise<void> {
 
 class CatalogueView implements vscode.WebviewViewProvider {
   private entries: CatalogueSummary[] = [];
+  private loading: Promise<CatalogueListing> | undefined;
   private query: CatalogueQuery = {};
   private revision = 0;
   private view: vscode.WebviewView | undefined;
@@ -1038,6 +1013,38 @@ class CatalogueView implements vscode.WebviewViewProvider {
     private readonly host: HostState,
   ) {
     this.record = new CatalogueRecordPanel(context, host);
+    const invalidate = () => {
+      const revision = ++this.revision;
+      this.entries = [];
+      this.record.clear();
+      this.post({entries: [], state: 'unauthenticated'});
+      if (this.view !== undefined) {
+        void (this.loading ?? Promise.resolve()).then(() =>
+          revision === this.revision
+            ? this.load(this.query, false, false)
+            : undefined,
+        );
+      }
+    };
+    context.subscriptions.push(
+      vscode.authentication.onDidChangeSessions(event => {
+        if (event.provider.id === 'github') {
+          invalidate();
+        }
+      }),
+      vscode.workspace.onDidChangeConfiguration(event => {
+        if (
+          event.affectsConfiguration('verdog.backendOrigin') ||
+          event.affectsConfiguration('verdog.githubRepositoryAccess')
+        ) {
+          invalidate();
+        }
+      }),
+    );
+  }
+
+  refresh(): Promise<void> {
+    return this.load();
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -1074,7 +1081,12 @@ class CatalogueView implements vscode.WebviewViewProvider {
     if (!append) {
       this.post({entries: [], state: 'loading'});
     }
-    const listing = await readCatalogue(this.host, query, interactive);
+    const loading = readCatalogue(this.host, query, interactive);
+    this.loading = loading;
+    const listing = await loading;
+    if (this.loading === loading) {
+      this.loading = undefined;
+    }
     if (revision !== this.revision) {
       return;
     }
@@ -1150,6 +1162,9 @@ class CatalogueView implements vscode.WebviewViewProvider {
 async function folderSize(uri: vscode.Uri): Promise<number> {
   try {
     const stat = await vscode.workspace.fs.stat(uri);
+    if (stat.type & vscode.FileType.SymbolicLink) {
+      return 0;
+    }
     if (stat.type & vscode.FileType.File) {
       return stat.size;
     }
@@ -1175,18 +1190,27 @@ function formatBytes(bytes: number): string {
 }
 
 async function manageCache(context: vscode.ExtensionContext): Promise<void> {
-  const previewRoot = vscode.Uri.joinPath(context.globalStorageUri, 'preview');
+  const previewRoot = vscode.Uri.joinPath(
+    context.globalStorageUri,
+    PREVIEW_DIRECTORY,
+  );
   const choices: Array<{
     description: string;
     label: string;
     target?: vscode.Uri;
-    workspace?: vscode.Uri;
   }> = [];
   try {
+    const rootStatus = await lstat(previewRoot.fsPath);
+    if (!rootStatus.isDirectory() || rootStatus.isSymbolicLink()) {
+      throw new Error('The preview cache root must be a real directory.');
+    }
     for (const [name, type] of await vscode.workspace.fs.readDirectory(
       previewRoot,
     )) {
-      if (!(type & vscode.FileType.Directory)) {
+      if (
+        !(type & vscode.FileType.Directory) ||
+        type & vscode.FileType.SymbolicLink
+      ) {
         continue;
       }
       const target = vscode.Uri.joinPath(previewRoot, name);
@@ -1198,14 +1222,6 @@ async function manageCache(context: vscode.ExtensionContext): Promise<void> {
         description: `${formatBytes(await folderSize(target))} · ${marker.commit.slice(0, 12)} · ${marker.workflow}`,
         label: marker.repository,
         target,
-        workspace: vscode.Uri.file(
-          previewWorkspace(
-            context.globalStorageUri.fsPath,
-            marker.repository,
-            marker.commit,
-            marker.workflow,
-          ),
-        ),
       });
     }
   } catch {
@@ -1213,6 +1229,8 @@ async function manageCache(context: vscode.ExtensionContext): Promise<void> {
   }
   const roots = [
     previewRoot,
+    vscode.Uri.joinPath(context.globalStorageUri, PREVIEW_WORKSPACE_DIRECTORY),
+    vscode.Uri.joinPath(context.globalStorageUri, 'preview'),
     vscode.Uri.joinPath(context.globalStorageUri, 'preview-workspaces'),
     vscode.Uri.joinPath(context.globalStorageUri, 'catalogue-metadata'),
   ];
@@ -1243,23 +1261,52 @@ async function manageCache(context: vscode.ExtensionContext): Promise<void> {
   if (answer !== 'Remove') {
     return;
   }
-  if (all) {
-    for (const root of roots) {
-      await deleteCache(root);
-    }
-  } else {
-    await deleteCache(selected.target!);
-    if (selected.workspace !== undefined) {
-      await deleteCache(selected.workspace);
-    }
-  }
-}
-
-async function deleteCache(uri: vscode.Uri): Promise<void> {
   try {
-    await vscode.workspace.fs.delete(uri, {recursive: true, useTrash: false});
-  } catch {
-    // Concurrent cleanup and never-created cache roots are already the requested outcome.
+    if (all) {
+      for (const root of roots) {
+        await deleteCache(root.fsPath);
+      }
+    } else {
+      const target = selected.target!;
+      await deleteCache(target.fsPath);
+      const workspaces = vscode.Uri.joinPath(
+        context.globalStorageUri,
+        PREVIEW_WORKSPACE_DIRECTORY,
+      );
+      try {
+        for (const [name, type] of await vscode.workspace.fs.readDirectory(
+          workspaces,
+        )) {
+          if (
+            !(type & vscode.FileType.File) ||
+            type & vscode.FileType.SymbolicLink ||
+            !name.endsWith('.code-workspace')
+          ) {
+            continue;
+          }
+          const location = vscode.Uri.joinPath(workspaces, name);
+          const raw = await vscode.workspace.fs.readFile(location);
+          const value = JSON.parse(Buffer.from(raw).toString('utf8')) as {
+            folders?: Array<{path?: string}>;
+          };
+          if (value.folders?.some(folder => folder.path === target.fsPath)) {
+            await deleteCache(location.fsPath);
+            await deleteCache(`${location.fsPath}.json`);
+          }
+        }
+      } catch (error) {
+        if (!(
+          error instanceof vscode.FileSystemError &&
+          error.code === 'FileNotFound'
+        )) {
+          throw error;
+        }
+      }
+    }
+  } catch (error) {
+    void vscode.window.showErrorMessage(
+      `Could not remove the catalogue cache: ${String(error)}`,
+    );
   }
 }
 
@@ -1267,12 +1314,14 @@ export function registerCatalogue(
   context: vscode.ExtensionContext,
   host: HostState,
 ): vscode.Disposable[] {
+  const catalogue = new CatalogueView(context, host);
   return [
-    vscode.window.registerWebviewViewProvider(
-      'verdog.catalogue',
-      new CatalogueView(context, host),
-      {webviewOptions: {retainContextWhenHidden: true}},
+    vscode.commands.registerCommand('verdog.refreshCatalogue', () =>
+      catalogue.refresh(),
     ),
+    vscode.window.registerWebviewViewProvider('verdog.catalogue', catalogue, {
+      webviewOptions: {retainContextWhenHidden: true},
+    }),
     vscode.commands.registerCommand('verdog.catalogue', () =>
       vscode.commands.executeCommand(
         'workbench.view.extension.verdogCatalogue',
@@ -1287,39 +1336,8 @@ export function registerCatalogue(
   ];
 }
 
-async function runPreviewed(host: OpenHost): Promise<void> {
-  const whose = host.preview?.repository ?? 'this workflow';
-  if (!vscode.workspace.isTrusted) {
-    void vscode.window.showWarningMessage(
-      `Trust this preview before running code from ${whose}. Read-only inspection remains ` +
-        'available in Restricted Mode.',
-    );
-    return;
-  }
-  const answer = await vscode.window.showWarningMessage(
-    `Run code from ${whose}?`,
-    {
-      detail:
-        `This executes ${host.preview?.workflow} from ${whose} at ` +
-        `${host.preview?.commit.slice(0, 12)} with your files and network access. Inspection ` +
-        'did not execute workflow code.',
-      modal: true,
-    },
-    'Run anyway',
-  );
-  if (answer === 'Run anyway') {
-    await runVerb(
-      host,
-      host.root,
-      'run',
-      host.preview?.workflow ? [host.preview.workflow] : [],
-    );
-  }
-}
-
 export function registerPreviewCommands(host: OpenHost): vscode.Disposable[] {
   return [
-    vscode.commands.registerCommand('verdog.run', () => runPreviewed(host)),
     ...REFUSED.map(id =>
       vscode.commands.registerCommand(id, () => {
         void vscode.window.showInformationMessage(

@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import {homedir} from 'node:os';
 
 import {type Outcome, verdog} from './cli';
-import {backendOrigin, backendSession} from './backend';
+import {backendOrigin, backendSession, rejectGitHubSession} from './backend';
 
 export type CommandTrust = 'required' | 'caller-verified';
 
@@ -28,10 +28,14 @@ export interface VerdogCommandOptions {
   readonly trust?: CommandTrust;
 }
 
-export function cliCommand(): string[] {
-  const configured = vscode.workspace
-    .getConfiguration('verdog')
-    .get<unknown>('command', ['verdog']);
+export function cliCommand(userOnly = false): string[] {
+  const configuration = vscode.workspace.getConfiguration('verdog');
+  const setting = userOnly
+    ? configuration.inspect<unknown>('command')
+    : undefined;
+  const configured = userOnly
+    ? (setting?.globalValue ?? setting?.defaultValue ?? ['verdog'])
+    : configuration.get<unknown>('command', ['verdog']);
   return Array.isArray(configured) &&
     configured.length > 0 &&
     configured.every(
@@ -72,20 +76,58 @@ export async function backendCommand(
       };
     }
     // Browsing is available in Restricted Mode: a launcher must not resolve code from that workspace.
-    const directory = ['catalogue', 'whoami'].includes(args[0])
-      ? homedir()
-      : root;
-    return await verdog(directory, args, {
+    const sourceOnly =
+      ['catalogue', 'whoami'].includes(args[0]) ||
+      (args[0] === 'describe' && args.includes('--project'));
+    const directory = sourceOnly ? homedir() : root;
+    const result = await verdog(directory, args, {
       ...options,
-      command: options.command ?? cliCommand(),
+      command: sourceOnly
+        ? cliCommand(true)
+        : (options.command ?? cliCommand()),
       backend,
     });
+    if (result.code !== 0) {
+      for (const output of [result.stdout, result.stderr]) {
+        let code: unknown;
+        try {
+          code = (JSON.parse(output) as {error?: {code?: unknown}})?.error
+            ?.code;
+        } catch {
+          continue;
+        }
+        if (code === 'github.token') {
+          await rejectGitHubSession();
+          const message =
+            'GitHub rejected this authorization. Sign in with GitHub again to continue.';
+          return {
+            code: result.code,
+            stdout: JSON.stringify({error: {code, message}}),
+            stderr: message,
+            combined: message,
+          };
+        }
+      }
+    }
+    return result;
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
         : 'The Verdog backend request failed.';
-    return {code: 1, stdout: '', stderr: message, combined: message};
+    const code =
+      error instanceof Error &&
+      'code' in error &&
+      typeof error.code === 'string' &&
+      (error.code === 'github.token' || error.code.startsWith('auth.'))
+        ? error.code
+        : 'backend.unavailable';
+    return {
+      code: 1,
+      stdout: JSON.stringify({error: {code, message}}),
+      stderr: message,
+      combined: message,
+    };
   }
 }
 

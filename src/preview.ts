@@ -1,37 +1,8 @@
 /** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
 /**
- * @fileoverview Reading a published workflow by checking it out, read-only, in its own window.
- *
- * This replaces a `TextDocumentContentProvider` on a scheme of our own, which served bytes
- * from a blobless clone via `git show`. That made the files read-only *by construction* --
- * VS Code will not save such a document -- and forfeited everything else, because Pylance
- * analyses only `file:` documents. A previewed file had syntax colour and no meaning: no
- * hovers, no go-to-definition, no workspace search, no Explorer tree.
- *
- * It also meant two representations of one thing. `clone.ts` derives `entity_documents` from
- * the path convention; the preview derived the same thing again from the same convention, and
- * the copies drifted -- previews had no edge or feature documents at all, for weeks, because
- * only one copy knew about them.
- *
- * So a preview is now a clone: a real checkout with a real `project.json`, read by the same
- * `readClone` as your own project. Editor read-only settings and filesystem permissions guard
- * the publisher's sources from ordinary edits while keeping Git and generated environment
- * state writable. This is an accident-prevention boundary, not a sandbox; everything a
- * language server needs remains available.
- *
- * What it must never do is *run* anything, and the environment is where that is decided. The
- * checkout gets a generated `.venv` for editor runtime types and a selected
- * `.verdog/environments/<workflow>` venv from `verdog sync --only-binary`: the runtime is
- * provisioned locally, project sources are linked with a `.pth`, and declared
- * dependencies are installed **as wheels only**.
- * That distinction is the whole of it -- installing an sdist executes its build backend,
- * installing a wheel unpacks it -- and it is enough, because a type checker never imports a
- * package. So a workflow that depends on numpy resolves numpy, with nothing executed.
- *
- * The selected workflow's environment is the only interpreter a preview uses. Borrowing the
- * reader's project environment made imports appear resolved against versions this release did
- * not declare, which defeats the point of reproducible inspection.
+ * @fileoverview Source-only catalogue checkouts. Inspection never prepares or selects a
+ * Python environment; install dependencies only after importing into a trusted project.
  */
 
 import {createHash} from 'node:crypto';
@@ -61,15 +32,16 @@ export interface Preview {
  */
 export const MARKER = path.join('.git', 'verdog-preview.json');
 export const INSPECTION_MARKER = path.join('.git', 'verdog-inspection.json');
+export const PREVIEW_DIRECTORY = 'preview-v2';
+export const PREVIEW_WORKSPACE_DIRECTORY = 'preview-workspaces-v2';
 
 export interface InspectionState {
   catalogue?: string;
   dependencies: 'incomplete' | 'ready';
-  environment: 'incomplete' | 'ready';
   metadata: 'mismatch' | 'ready' | 'unchecked';
   preview: Preview;
   source: 'ready';
-  version: 1;
+  version: 2;
 }
 
 /**
@@ -87,7 +59,7 @@ export function checkoutRoot(
 ): string {
   return path.join(
     storage,
-    'preview',
+    PREVIEW_DIRECTORY,
     previewKey(repository, commit, workflow),
   );
 }
@@ -111,11 +83,17 @@ export function previewWorkspace(
   repository: string,
   commit: string,
   workflow: string,
+  origin?: string,
 ): string {
+  const key = createHash('sha256')
+    .update(previewKey(repository, commit, workflow))
+    .update('\0')
+    .update(origin ?? '')
+    .digest('hex');
   return path.join(
     storage,
-    'preview-workspaces',
-    `${previewKey(repository, commit, workflow)}.code-workspace`,
+    PREVIEW_WORKSPACE_DIRECTORY,
+    `${key}.code-workspace`,
   );
 }
 
@@ -127,10 +105,7 @@ export function previewWorkspace(
  * They are embedded in a disposable `.code-workspace`, so a publisher's tracked
  * `.vscode/settings.json` is never overwritten.
  */
-export function settings(
-  preview: Preview,
-  interpreter: string | undefined,
-): string {
+export function settings(preview: Preview): string {
   const value: Record<string, unknown> = {
     // Says "read-only" before the keystroke rather than at save time, which is where a person
     // finds out otherwise. `fromPermissions` defaults to false, so `chmod` alone marks nothing.
@@ -150,52 +125,17 @@ export function settings(
     'python.analysis.typeCheckingMode': 'off',
     'window.title': `${preview.repository}@${preview.commit.slice(0, 12)} (read-only preview)`,
   };
-  if (interpreter !== undefined) {
-    // Only the selected workflow's environment. Pylance reads project source links from its
-    // `.pth` file; another project's interpreter would resolve the wrong dependency versions.
-    value['python.defaultInterpreterPath'] = interpreter;
-  }
   return `${JSON.stringify(value, undefined, 2)}\n`;
 }
 
 /** A disposable control file, kept outside the publisher's exact Git worktree. */
-export function workspace(
-  preview: Preview,
-  folder: string,
-  interpreter: string | undefined,
-): string {
+export function workspace(preview: Preview, folder: string): string {
   return `${JSON.stringify(
     {
       folders: [{path: folder}],
-      settings: JSON.parse(settings(preview, interpreter)) as Record<
-        string,
-        unknown
-      >,
+      settings: JSON.parse(settings(preview)) as Record<string, unknown>,
     },
     undefined,
     2,
   )}\n`;
-}
-
-/**
- * Where the selected workflow's isolated interpreter would be, on either platform.
- */
-export function interpreterIn(
-  root: string | undefined,
-  workflow?: string,
-): string[] {
-  if (root === undefined || workflow === undefined) {
-    return [];
-  }
-  return [
-    path.join(root, '.verdog', 'environments', workflow, 'bin', 'python'),
-    path.join(
-      root,
-      '.verdog',
-      'environments',
-      workflow,
-      'Scripts',
-      'python.exe',
-    ),
-  ];
 }

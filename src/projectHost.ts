@@ -295,7 +295,7 @@ export async function selectWorkflowEnvironment(
   host: OpenHost,
   workflow: WorkflowContext,
 ): Promise<void> {
-  if (!vscode.workspace.isTrusted) {
+  if (host.preview !== undefined || !vscode.workspace.isTrusted) {
     return;
   }
   const owner = locate(host, workflow.ownerGraph).root;
@@ -754,7 +754,7 @@ export async function refresh(
       publishSnapshot(host);
     },
   );
-  if (vscode.workspace.isTrusted) {
+  if (host.preview === undefined && vscode.workspace.isTrusted) {
     const termination = host.termination.update(
       Object.fromEntries([
         ['', snapshot.graph_hash],
@@ -769,7 +769,9 @@ export async function refresh(
     }
   } else {
     host.termination.unavailable(
-      'Trust this workspace to send project manifests to the Verdog service for analysis.',
+      host.preview === undefined
+        ? 'Trust this workspace to send project manifests to the Verdog service for analysis.'
+        : 'Import into a trusted project to analyze this workflow.',
     );
   }
   if (host.preview !== undefined && host.preview.workflow) {
@@ -853,6 +855,12 @@ export async function runVerb(
   verb: 'check' | 'run' | 'sync',
   args: readonly string[] = [],
 ): Promise<void> {
+  if (host.preview !== undefined) {
+    void vscode.window.showWarningMessage(
+      'Import into a trusted project to check, synchronize, or run this workflow.',
+    );
+    return;
+  }
   const structured = verb === 'check';
   const result = await runVerdogCommand(
     root,

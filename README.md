@@ -34,8 +34,6 @@ shows a certified loop and the Python validation behind it.
 
 Requires **VS Code 1.106+**, **Python 3.12+**, Git, and the `verdog` CLI from
 [`verdog-cli`](https://pypi.org/project/verdog-cli/).
-If you previously installed `verdog-runtime` as a uv tool, run
-`uv tool uninstall verdog-runtime` first.
 
 Install the CLI with [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
@@ -67,7 +65,7 @@ credentials separately.
 **In trusted workspaces, opening or refreshing a graph sends project manifests for
 analysis. Structural canvas edits, New Project, and catalogue imports send declared
 project files for generation; Check and Rename also send declared project files.**
-Restricted Mode disables automatic analysis. Running a workflow executes its code locally
+Restricted Mode and source-only catalogue previews disable automatic analysis. Running a workflow executes its code locally
 and may contact its configured agent provider. See the [privacy policy](PRIVACY.md).
 
 <details>
@@ -78,14 +76,34 @@ The default backend is `https://157.180.79.112`. To use another deployment, set
 HTTPS is required except for loopback addresses such as `http://127.0.0.1:18765`.
 Workspace settings and project files cannot choose where sign-in tokens are sent.
 
-GitHub sign-in requests `read:user`, which does not grant private repository access.
-The configured backend exchanges that token for a Verdog session held in VS Code's
-SecretStorage. No GitHub App secrets are included in the extension.
+GitHub sign-in uses VS Code's built-in provider and defaults to `read:user`, which
+does not grant private repository access. To include private repositories, run
+**Verdog: Authorize Private Repository Access**. The confirmation names your backend
+and explains GitHub's broad `repo` scope, including read and write repository access,
+before the token is sent there. No GitHub App registration or installation is needed.
+Changing the backend or account requires a new private-access confirmation.
+
+**Verdog: Use Public Catalogue Access** returns to `read:user`; it does not revoke
+GitHub permissions shared with other extensions. The configured backend exchanges the
+GitHub token for a Verdog session in VS Code SecretStorage, bound to the backend,
+account, and access mode. Workspace settings cannot select private access.
 
 If the CLI is not on your `PATH`, set `verdog.command` to an argument array. An
-executable path containing spaces must be one array item.
+executable path containing spaces must be one array item. Catalogue browsing and source
+inspection use only the user-level command and launch it outside the publisher checkout.
 
 </details>
+
+## Catalogue inspection
+
+**Inspect** fetches the exact source and pinned repositories, then verifies their published
+metadata. It does not install dependencies, select a Python interpreter, type-check, analyze,
+or run the workflow. Import a verified release into your project, then synchronize its
+Python environment and run it from that project's trusted window. A preview offers
+**Open Target Project** after importing.
+
+Preview source is cached separately from each originating project's temporary workspace.
+Use **Verdog: Manage Catalogue Cache** to remove cached inspections.
 
 ## Development and releases
 

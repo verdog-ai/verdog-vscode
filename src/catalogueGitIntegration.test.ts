@@ -1,6 +1,19 @@
 /** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
 import assert from 'node:assert/strict';
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  readFile,
+  readdir,
+  rename,
+  stat,
+  chmod,
+  symlink,
+  lstat,
+  rm,
+} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import * as path from 'node:path';
 import {test} from 'node:test';
@@ -261,6 +274,7 @@ test('README fetch retries the exact release through command-scoped GitHub SSH',
     typeof import('./catalogueMetadata')
   >('catalogueMetadata.ts', {
     vscode: {
+      FileType: {File: 1, Directory: 2, SymbolicLink: 64},
       Uri: {file: uri},
       workspace: {fs: {createDirectory: async () => undefined}},
     },
@@ -356,6 +370,14 @@ test('inspection retries source and recursive dependencies through command-scope
     writeFile: async () => undefined,
   };
   const {materialise} = await load<typeof import('./checkout')>('checkout.ts', {
+    'node:fs/promises': {
+      lstat: async () => ({
+        isDirectory: () => true,
+        isSymbolicLink: () => false,
+      }),
+      readdir,
+      rm,
+    },
     vscode: {
       Uri: {
         file: uri,
@@ -400,7 +422,16 @@ test('preview locking leaves generated environments writable while locking publi
     root: string;
   }> = [];
   const {lockPreview} = await load<typeof import('./checkout')>('checkout.ts', {
+    'node:fs/promises': {
+      lstat: async () => ({
+        isDirectory: () => true,
+        isSymbolicLink: () => false,
+      }),
+      readdir,
+      rm,
+    },
     vscode: {
+      FileType: {File: 1, Directory: 2, SymbolicLink: 64},
       Uri: {file: uri},
       workspace: {
         fs: {
@@ -411,6 +442,7 @@ test('preview locking leaves generated environments writable while locking publi
             ['.vscode', 2],
             ['project.json', 1],
             ['src', 2],
+            ['outside', 66],
           ],
         },
       },
@@ -442,106 +474,257 @@ test('preview locking leaves generated environments writable while locking publi
   ]);
 });
 
-test('legacy preview environment repair makes only an untracked real .venv writable', async () => {
-  const root = '/catalogue/exact-release';
-  const signal = new AbortController().signal;
-  const calls: Array<{
-    args: string[];
-    command: string[] | undefined;
-    root: string;
-    signal?: AbortSignal;
-  }> = [];
-  const {preparePreviewEnvironment} = await load<typeof import('./checkout')>(
-    'checkout.ts',
-    {
-      'node:fs/promises': {
-        lstat: async (location: string) => {
-          assert.equal(location, path.join(root, '.venv'));
-          return {isDirectory: () => true};
+function filesystemVscode() {
+  return {
+    FileType: {File: 1, Directory: 2, SymbolicLink: 64},
+    Uri: {
+      file: (fsPath: string) => ({fsPath, scheme: 'file'}),
+      joinPath: (base: MockUri, ...parts: string[]) => ({
+        fsPath: path.join(base.fsPath, ...parts),
+        scheme: 'file',
+      }),
+    },
+    workspace: {
+      fs: {
+        createDirectory: async (location: MockUri) => {
+          await mkdir(location.fsPath, {recursive: true});
         },
-      },
-      vscode: {Uri: {file: uri}, workspace: {fs: {}}},
-      './cli': {
-        verdog: async (
-          calledRoot: string,
-          args: string[],
-          options: {command?: string[]; signal?: AbortSignal},
-        ): Promise<Outcome> => {
-          calls.push({
-            args: [...args],
-            command: options.command,
-            root: calledRoot,
-            signal: options.signal,
-          });
-          return outcome(0);
-        },
+        readFile: (location: MockUri) => readFile(location.fsPath),
+        writeFile: (location: MockUri, content: Uint8Array) =>
+          writeFile(location.fsPath, content),
+        rename: (from: MockUri, to: MockUri) => rename(from.fsPath, to.fsPath),
+        readDirectory: async (location: MockUri) =>
+          (await readdir(location.fsPath, {withFileTypes: true})).map(entry => [
+            entry.name,
+            entry.isSymbolicLink() ? 64 : entry.isDirectory() ? 2 : 1,
+          ]),
       },
     },
-  );
+  };
+}
 
-  assert.equal(
-    await preparePreviewEnvironment(root, () => undefined, signal),
-    true,
+test('locking and removing a real cache leaves external symlink targets untouched', async () => {
+  const temporary = await mkdtemp(
+    path.join(tmpdir(), 'verdog-preview-permissions-'),
   );
-  assert.deepEqual(calls, [
-    {args: ['ls-files', '--', '.venv'], command: ['git'], root, signal},
-    {
-      args: ['-R', 'u+w', '--', '.venv'],
-      command: ['chmod'],
-      root,
-      signal,
-    },
-  ]);
+  const outside = path.join(temporary, 'outside');
+  const root = path.join(temporary, 'preview');
+  const module = await load<typeof import('./checkout')>('checkout.ts', {
+    vscode: filesystemVscode(),
+  });
+  try {
+    await mkdir(outside);
+    await writeFile(path.join(outside, 'keep'), 'outside');
+    await mkdir(path.join(root, 'src'), {recursive: true});
+    await writeFile(path.join(root, 'src', 'file.py'), '# source');
+    await symlink(outside, path.join(root, 'outside'));
+    await symlink(outside, path.join(root, 'src', 'nested'));
+    const before = (await stat(outside)).mode;
+    await module.lockPreview(root, () => {});
+    assert.equal((await stat(outside)).mode, before);
+    await module.deleteCache(root);
+    assert.equal(await readFile(path.join(outside, 'keep'), 'utf8'), 'outside');
+    await assert.rejects(lstat(root), {code: 'ENOENT'});
+    const link = path.join(temporary, 'root-link');
+    await symlink(outside, link);
+    await assert.rejects(
+      module.lockPreview(link, () => {}),
+      /real directory/,
+    );
+    await module.deleteCache(link);
+    assert.equal((await stat(outside)).mode, before);
+  } finally {
+    await chmod(root, 0o755).catch(() => {});
+    await rm(temporary, {recursive: true, force: true});
+  }
 });
 
-test('preview environment repair refuses symlinked and tracked .venv state', async () => {
-  for (const scenario of [
+test('source-only inspection refuses old environments, including dependency environments', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'verdog-preview-source-'));
+  const module = await load<typeof import('./checkout')>('checkout.ts', {
+    vscode: filesystemVscode(),
+  });
+  try {
+    assert.equal(await module.sourceOnlyProblem(root), undefined);
+    await mkdir(path.join(root, 'external', 'dependency', '.venv'), {
+      recursive: true,
+    });
+    assert.match((await module.sourceOnlyProblem(root)) ?? '', /refuses .venv/);
+    await rm(path.join(root, 'external'), {recursive: true});
+    await mkdir(path.join(root, '.verdog', 'environments'), {recursive: true});
+    assert.match(
+      (await module.sourceOnlyProblem(root)) ?? '',
+      /refuses .verdog\/environments/,
+    );
+  } finally {
+    await rm(root, {recursive: true, force: true});
+  }
+});
+
+test('launch workspaces restore independent origins and never reuse legacy ready receipts', async () => {
+  const storagePath = await mkdtemp(
+    path.join(tmpdir(), 'verdog-preview-origins-'),
+  );
+  const vscodeMock = filesystemVscode();
+  const module = await load<typeof import('./checkout')>('checkout.ts', {
+    vscode: vscodeMock,
+  });
+  const preview = {repository, commit, workflow: 'main'};
+  const root = module.checkoutRoot(storagePath, repository, commit, 'main');
+  const storage = vscodeMock.Uri.file(storagePath) as unknown as vscode.Uri;
+  try {
+    await mkdir(path.join(root, '.git'), {recursive: true});
+    await writeFile(
+      path.join(root, module.MARKER),
+      JSON.stringify({...preview, origin: '/stale'}),
+    );
+    const first = await module.configurePreviewWorkspace(storage, root, {
+      ...preview,
+      origin: '/projects/a',
+    });
+    const second = await module.configurePreviewWorkspace(storage, root, {
+      ...preview,
+      origin: '/projects/b',
+    });
+    assert.notEqual(first.fsPath, second.fsPath);
+    assert.equal(
+      (await module.readPreview(root, storage, first))?.origin,
+      '/projects/a',
+    );
+    assert.equal(
+      (await module.readPreview(root, storage, second))?.origin,
+      '/projects/b',
+    );
+    assert.equal((await module.readMarker(root))?.origin, undefined);
+    await writeFile(
+      path.join(root, module.INSPECTION_MARKER),
+      JSON.stringify({
+        version: 1,
+        source: 'ready',
+        dependencies: 'ready',
+        metadata: 'ready',
+        environment: 'ready',
+        preview,
+      }),
+    );
+    assert.equal(await module.readInspectionState(root, preview), undefined);
+    await module.writeInspectionState(root, {
+      version: 2,
+      source: 'ready',
+      dependencies: 'ready',
+      metadata: 'ready',
+      preview,
+    });
+    assert.equal((await module.readInspectionState(root, preview))?.version, 2);
+    assert.equal(
+      'python.defaultInterpreterPath' in
+        JSON.parse(await readFile(first.fsPath, 'utf8')).settings,
+      false,
+    );
+  } finally {
+    await rm(storagePath, {recursive: true, force: true});
+  }
+});
+
+test('a queued authentication reload cannot supersede a newer interactive catalogue refresh', async () => {
+  let provider!: {resolveWebviewView(view: vscode.WebviewView): void};
+  let invalidate!: () => void;
+  const commands = new Map<string, () => Promise<void>>();
+  const messages: unknown[] = [];
+  const requests: Array<{
+    interactive: boolean;
+    resolve: (result: Outcome) => void;
+  }> = [];
+  const {registerCatalogue} = await load<typeof import('./catalogueView')>(
+    'catalogueView.ts',
     {
-      directory: false,
-      label: 'symlink',
-      tracked: '',
-      warning: /not a real directory/,
-    },
-    {
-      directory: true,
-      label: 'tracked',
-      tracked: '.venv/pyvenv.cfg\n',
-      warning: /source tracks \.venv/,
-    },
-  ]) {
-    const calls: string[][] = [];
-    const logs: string[] = [];
-    const {preparePreviewEnvironment} = await load<typeof import('./checkout')>(
-      'checkout.ts',
-      {
-        'node:fs/promises': {
-          lstat: async () => ({
-            isDirectory: () => scenario.directory,
-            isSymbolicLink: () => !scenario.directory,
+      './projectHost': {
+        chooseSubroutineIn: () => {},
+        cliCommand: () => ['verdog'],
+        isEditable: () => false,
+        refresh: () => {},
+      },
+      './verdogCommand': {
+        backendCommand: (
+          _root: string,
+          _args: string[],
+          options: {interactive: boolean},
+        ) =>
+          new Promise<Outcome>(resolve => {
+            requests.push({interactive: options.interactive, resolve});
           }),
+      },
+      './webviewHtml': {webviewHtml: () => ''},
+      vscode: {
+        Uri: {
+          joinPath: (base: MockUri, child: string) =>
+            uri(path.join(base.fsPath, child)),
         },
-        vscode: {Uri: {file: uri}, workspace: {fs: {}}},
-        './cli': {
-          verdog: async (_root: string, args: string[]): Promise<Outcome> => {
-            calls.push([...args]);
-            return outcome(0, scenario.tracked);
+        authentication: {onDidChangeSessions: () => ({dispose() {}})},
+        commands: {
+          registerCommand: (name: string, callback: () => Promise<void>) => {
+            commands.set(name, callback);
+            return {dispose() {}};
+          },
+        },
+        window: {
+          registerWebviewViewProvider: (
+            _name: string,
+            value: typeof provider,
+          ) => {
+            provider = value;
+            return {dispose() {}};
+          },
+        },
+        workspace: {
+          onDidChangeConfiguration: (
+            listener: (event: vscode.ConfigurationChangeEvent) => void,
+          ) => {
+            invalidate = () =>
+              listener({
+                affectsConfiguration: section =>
+                  section === 'verdog.githubRepositoryAccess',
+              });
+            return {dispose() {}};
           },
         },
       },
-    );
-
-    assert.equal(
-      await preparePreviewEnvironment('/catalogue/exact-release', line =>
-        logs.push(line),
-      ),
-      false,
-      scenario.label,
-    );
-    assert.deepEqual(
-      calls,
-      scenario.directory ? [['ls-files', '--', '.venv']] : [],
-      scenario.label,
-    );
-    assert.match(logs.join('\n'), scenario.warning, scenario.label);
-  }
+    },
+  );
+  registerCatalogue(
+    {
+      subscriptions: [],
+      extensionUri: uri('/extension'),
+    } as unknown as vscode.ExtensionContext,
+    {output: {appendLine() {}}} as unknown as Parameters<
+      typeof registerCatalogue
+    >[1],
+  );
+  provider.resolveWebviewView({
+    webview: {
+      onDidReceiveMessage() {},
+      postMessage: (message: unknown) => {
+        messages.push(message);
+        return Promise.resolve(true);
+      },
+    },
+  } as unknown as vscode.WebviewView);
+  const refresh = commands.get('verdog.refreshCatalogue')!;
+  const old = refresh();
+  invalidate();
+  const interactive = refresh();
+  requests[0].resolve(outcome(0, JSON.stringify({entries: [], login: 'old'})));
+  await old;
+  assert.deepEqual(
+    requests.map(request => request.interactive),
+    [true, true],
+  );
+  requests[1].resolve(
+    outcome(0, JSON.stringify({entries: [], login: 'renewed'})),
+  );
+  await interactive;
+  assert.deepEqual(messages.at(-1), {
+    kind: 'listing',
+    listing: {entries: [], login: 'renewed', state: 'empty'},
+  });
 });

@@ -132,6 +132,14 @@
       {
         "command": "verdog.constrain",
         "title": "Verdog: Constrain an Edge"
+      },
+      {
+        "command": "verdog.authorizePrivateRepositories",
+        "title": "Verdog: Authorize Private Repository Access"
+      },
+      {
+        "command": "verdog.usePublicCatalogueAccess",
+        "title": "Verdog: Use Public Catalogue Access"
       }
     ],
     "keybindings": [
@@ -166,6 +174,16 @@
           "default": "https://157.180.79.112",
           "scope": "application",
           "markdownDescription": "Trusted Verdog backend origin for API 14. Compiler requests are anonymous; catalogue actions use GitHub sign-in. Project files cannot override this user setting. HTTPS is required except for loopback HTTP (for example an SSH tunnel)."
+        },
+        "verdog.githubRepositoryAccess": {
+          "type": "string",
+          "enum": [
+            "public",
+            "private"
+          ],
+          "default": "public",
+          "scope": "application",
+          "markdownDescription": "GitHub authorization used for catalogue requests. Public requests read:user. Private additionally requests repo (read and write repository access) after Verdog: Authorize Private Repository Access confirms the backend destination. Workspace settings cannot change this preference."
         }
       }
     },
@@ -180,6 +198,16 @@
           "command": "verdog.refreshRuns",
           "group": "navigation@1",
           "when": "view == verdog.runs"
+        },
+        {
+          "command": "verdog.authorizePrivateRepositories",
+          "group": "authorization@1",
+          "when": "view == verdog.catalogue"
+        },
+        {
+          "command": "verdog.usePublicCatalogueAccess",
+          "group": "authorization@2",
+          "when": "view == verdog.catalogue"
         }
       ],
       "view/item/context": [

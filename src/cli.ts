@@ -74,9 +74,8 @@ export function verdog(
     delete env.VERDOG_SESSION_TOKEN_STDIN;
     if (options.backend !== undefined) {
       env.VERDOG_BACKEND_ORIGIN = options.backend.origin;
-      if (options.backend.token !== undefined) {
-        env.VERDOG_SESSION_TOKEN_STDIN = '1';
-      }
+      env.VERDOG_SESSION_TOKEN_STDIN =
+        options.backend.token === undefined ? '0' : '1';
     }
     // An older CLI must reject this option instead of silently using its saved backend.
     const backendArguments =

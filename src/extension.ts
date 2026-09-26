@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import {registerCanvas, showCanvas} from './canvasView';
 import {initializeBackend} from './backend';
 import {registerCatalogue, registerPreviewCommands} from './catalogueView';
-import {readMarker} from './checkout';
+import {readPreview} from './checkout';
 import {REVEAL_CANVAS, newProject} from './newProject';
 import {registerProjectCommands} from './projectActions';
 import {registerRunHistory} from './runHistoryView';
@@ -35,7 +35,14 @@ export async function activate(
   );
 
   const root = await findClone();
-  const preview = root === undefined ? undefined : await readMarker(root);
+  const preview =
+    root === undefined
+      ? undefined
+      : await readPreview(
+          root,
+          context.globalStorageUri,
+          vscode.workspace.workspaceFile,
+        );
   const host: HostState = {
     access: undefined,
     canvasNavigationVersion: 0,

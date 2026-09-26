@@ -18,7 +18,8 @@ import {
   MARKER,
   type Preview,
   checkoutRoot,
-  interpreterIn,
+  previewWorkspace,
+  PREVIEW_DIRECTORY,
   settings,
 } from './preview';
 
@@ -45,7 +46,7 @@ test('two releases of one workflow check out to different places', () => {
     entry.workflow,
   );
   assert.notEqual(first, second);
-  assert.equal(path.dirname(first), path.join('/storage', 'preview'));
+  assert.equal(path.dirname(first), path.join('/storage', PREVIEW_DIRECTORY));
   assert.match(path.basename(first), /^[0-9a-f]{64}$/);
   // The same commit twice is the same directory, which is what makes reuse safe: a commit is
   // immutable, so there is no invalidation rule to get wrong.
@@ -63,7 +64,7 @@ test('two releases of one workflow check out to different places', () => {
     entry.commit,
     '../../workflow',
   );
-  assert.equal(path.dirname(hostile), path.join('/storage', 'preview'));
+  assert.equal(path.dirname(hostile), path.join('/storage', PREVIEW_DIRECTORY));
 });
 
 test('the marker lives inside .git, so it is neither committed nor locked', () => {
@@ -74,9 +75,7 @@ test('the marker lives inside .git, so it is neither committed nor locked', () =
 });
 
 test('the settings make the checkout read-only and silent, and never speak for it', () => {
-  const value = JSON.parse(
-    settings(entry, '/home/dev/my-project/.venv/bin/python'),
-  ) as Record<string, unknown>;
+  const value = JSON.parse(settings(entry)) as Record<string, unknown>;
   // Said before the keystroke, not at save time.
   assert.deepEqual(value['files.readonlyInclude'], {'**': true});
   // Defaults to false, so chmod alone would mark nothing in the editor.
@@ -90,31 +89,44 @@ test('the settings make the checkout read-only and silent, and never speak for i
   // diagnostic a reader needs when a declared dependency has not been installed.
   assert.equal(value['python.analysis.typeCheckingMode'], 'off');
   assert.equal('python.analysis.ignore' in value, false);
-  assert.equal(
-    value['python.defaultInterpreterPath'],
-    '/home/dev/my-project/.venv/bin/python',
-  );
+  assert.equal('python.defaultInterpreterPath' in value, false);
   assert.match(String(value['window.title']), /verdog-ai\/demo1@e671824c56a6/);
 });
 
 test('with no interpreter to borrow, the key is absent rather than empty', () => {
   // An empty string would point Pylance at nothing and be harder to diagnose than silence.
   // The previewed package still resolves: its own pyproject carries extraPaths.
-  const value = JSON.parse(settings(entry, undefined)) as Record<
-    string,
-    unknown
-  >;
+  const value = JSON.parse(settings(entry)) as Record<string, unknown>;
   assert.equal('python.defaultInterpreterPath' in value, false);
   assert.deepEqual(value['files.readonlyInclude'], {'**': true});
 });
 
-test('only the selected preview workflow environment is considered, on either platform', () => {
-  assert.deepEqual(interpreterIn('/home/dev/my-project', 'main'), [
-    '/home/dev/my-project/.verdog/environments/main/bin/python',
-    '/home/dev/my-project/.verdog/environments/main/Scripts/python.exe',
-  ]);
-  // Metadata browsing has no selected checkout or interpreter.
-  assert.deepEqual(interpreterIn(undefined), []);
+test('two project origins share source but have independent preview workspaces', () => {
+  const first = previewWorkspace(
+    '/storage',
+    entry.repository,
+    entry.commit,
+    entry.workflow,
+    '/projects/a',
+  );
+  const second = previewWorkspace(
+    '/storage',
+    entry.repository,
+    entry.commit,
+    entry.workflow,
+    '/projects/b',
+  );
+  assert.notEqual(first, second);
+  assert.equal(
+    first,
+    previewWorkspace(
+      '/storage',
+      entry.repository,
+      entry.commit,
+      entry.workflow,
+      '/projects/a',
+    ),
+  );
 });
 
 test('the extension remains available for safe inspection in Restricted Mode', async () => {

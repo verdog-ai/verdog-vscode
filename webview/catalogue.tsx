@@ -194,9 +194,11 @@ function CatalogueSidebar({initial}: {initial: CatalogueListing}) {
             >
               Sign in with GitHub
             </button>
+            {listing.detail ? <p>{listing.detail}</p> : undefined}
             <p>
-              GitHub sign-in with read:user does not grant access to private
-              repositories.
+              Public catalogue access uses read:user. Private repository access
+              requires Authorize Private Repository Access in the catalogue
+              menu.
             </p>
           </>
         ) : undefined}
