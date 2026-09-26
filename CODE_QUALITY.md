@@ -23,9 +23,9 @@ noncomment lines, and functions over 40 statements. These are review signals,
 not correctness tests or targets to satisfy by adding wrappers. The standard
 ESLint JSON formatter can retain reports: `npm run metrics -- --format json`.
 
-For the shared runtime wire contract, check out `verdog-runtime` beside this
-repository and run `npm run test:integration`. `npm run package` validates and
-builds the VSIX without publishing it.
+For the shared run-history wire contract, check out `verdog-cli` and
+`verdog-runtime` beside this repository and run `npm run test:integration`.
+`npm run package` validates and builds the VSIX without publishing it.
 
 ## September 2026 baseline
 

@@ -33,11 +33,14 @@ shows a certified loop and the Python validation behind it.
 ## Get started
 
 Requires **VS Code 1.106+**, **Python 3.12+**, Git, and the `verdog` CLI from
-[`verdog-runtime`](https://pypi.org/project/verdog-runtime/) **0.1.1+**.
-Install or update the CLI with [uv](https://docs.astral.sh/uv/getting-started/installation/):
+[`verdog-cli`](https://pypi.org/project/verdog-cli/).
+If you previously installed `verdog-runtime` as a uv tool, run
+`uv tool uninstall verdog-runtime` first.
+
+Install the CLI with [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```sh
-uv tool install --upgrade 'verdog-runtime>=0.1.1'
+uv tool install verdog-cli
 verdog --help
 ```
 
@@ -108,8 +111,13 @@ npm run build
 code --extensionDevelopmentPath=. /path/to/project
 ```
 
-`npm test` needs no sibling repositories. With `../verdog-runtime` checked out,
-`npm run test:integration` checks the run-history contract against the Python producers.
+For development previews, prepare `../verdog-cli/.venv` using the
+[CLI development instructions](https://github.com/verdog-ai/verdog-cli#development).
+Use the paired local-package installation while the matching runtime is unpublished.
+
+`npm test` needs no sibling repositories. With `../verdog-cli` and
+`../verdog-runtime` checked out, `npm run test:integration` checks the run-history
+contract against the CLI and runtime producers.
 The extension host lives in `src/`, platform-neutral graph and editing logic in `model/`,
 and the canvas and catalogue webviews in `webview/`.
 

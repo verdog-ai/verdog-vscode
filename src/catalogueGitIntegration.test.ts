@@ -188,7 +188,7 @@ test('development opens an isolated host with the local Verdog extension', async
   const executableDirectory = path.resolve(
     context.extensionUri.fsPath,
     '..',
-    'verdog-runtime',
+    'verdog-cli',
     '.venv',
     process.platform === 'win32' ? 'Scripts' : 'bin',
   );

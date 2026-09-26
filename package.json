@@ -2,7 +2,7 @@
   "name": "verdog-vscode",
   "displayName": "Verdog",
   "description": "Author a Verdog project from the clone on disk: the workflow canvas, check and run.",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "publisher": "verdog",
   "engines": {
@@ -159,7 +159,7 @@
           "default": [
             "verdog"
           ],
-          "markdownDescription": "The executable and arguments used to run the Verdog CLI. Install it with `uv tool install 'verdog-runtime>=0.1.1'`. Use one item for an executable path containing spaces."
+          "markdownDescription": "The executable and arguments used to run the Verdog CLI. Install it with `uv tool install verdog-cli`. Use one item for an executable path containing spaces."
         },
         "verdog.backendOrigin": {
           "type": "string",

@@ -148,7 +148,7 @@ export function verdog(
     child.once('error', error => {
       const lines = [
         `${executable} could not be started: ${error.message}`,
-        "Install the CLI with `uv tool install 'verdog-runtime>=0.1.1'`, or set " +
+        'Install the CLI with `uv tool install verdog-cli`, or set ' +
           '`verdog.command` to an argument array containing its executable path.',
       ];
       for (const line of lines) {

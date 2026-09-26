@@ -407,7 +407,7 @@ function developmentExtensionEnvironment(extensionRoot: string): string {
   const executableDirectory = path.resolve(
     extensionRoot,
     '..',
-    'verdog-runtime',
+    'verdog-cli',
     '.venv',
     process.platform === 'win32' ? 'Scripts' : 'bin',
   );
@@ -431,7 +431,7 @@ export async function openPreviewWorkspace(
     const key = path.basename(location.fsPath, '.code-workspace').slice(0, 12);
     const userData = path.join(tmpdir(), `verdog-vscode-${key}`);
     // The fresh instance has no original user settings. Give only its Extension Host the
-    // runtime repository's development CLI directory; installed previews never use this path.
+    // CLI repository's development executable directory; installed previews never use this path.
     const launched = await verdog(
       root,
       [
