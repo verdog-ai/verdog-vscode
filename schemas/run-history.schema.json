@@ -5,6 +5,7 @@
   "description": "Versioned machine-readable responses for runs, checkpoints, and lifecycle operations.",
   "oneOf": [
     { "$ref": "#/definitions/runsEnvelope" },
+    { "$ref": "#/definitions/briefRunsEnvelope" },
     { "$ref": "#/definitions/checkpointsEnvelope" },
     { "$ref": "#/definitions/operationEnvelope" },
     { "$ref": "#/definitions/errorEnvelope" }
@@ -206,6 +207,81 @@
         "runs": {
           "type": "array",
           "items": { "$ref": "#/definitions/runSummary" }
+        }
+      }
+    },
+    "runHeader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "directory_name",
+        "workflow",
+        "status",
+        "started_at",
+        "updated_at",
+        "output_dir",
+        "launch",
+        "parent"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/runSummary/properties/id"
+        },
+        "directory_name": {
+          "$ref": "#/definitions/runSummary/properties/directory_name"
+        },
+        "workflow": {
+          "$ref": "#/definitions/runSummary/properties/workflow"
+        },
+        "status": {
+          "$ref": "#/definitions/runSummary/properties/status"
+        },
+        "started_at": {
+          "$ref": "#/definitions/runSummary/properties/started_at"
+        },
+        "updated_at": {
+          "$ref": "#/definitions/runSummary/properties/updated_at"
+        },
+        "output_dir": {
+          "$ref": "#/definitions/runSummary/properties/output_dir"
+        },
+        "launch": {
+          "$ref": "#/definitions/runSummary/properties/launch"
+        },
+        "parent": {
+          "$ref": "#/definitions/runSummary/properties/parent"
+        }
+      }
+    },
+    "briefRunsEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "brief",
+        "project",
+        "runs"
+      ],
+      "properties": {
+        "schema_version": {
+          "$ref": "#/definitions/schemaVersion"
+        },
+        "operation": {
+          "const": "runs"
+        },
+        "brief": {
+          "const": true
+        },
+        "project": {
+          "type": "string"
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/runHeader"
+          }
         }
       }
     },

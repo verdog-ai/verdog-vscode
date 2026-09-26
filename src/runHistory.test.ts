@@ -12,6 +12,7 @@ import {
   parseErrorEnvelope,
   parseOperationEnvelope,
   parseRunsEnvelope,
+  parseBriefRunsEnvelope,
   parseWorkflowArguments,
   restartCliArguments,
   resumeCliArguments,
@@ -336,4 +337,37 @@ test('operation argument builders preserve argument boundaries', () => {
     'branch',
     '--json',
   ]);
+});
+
+test('brief run headers omit checkpoint inventories and cannot be confused with full summaries', () => {
+  const {
+    checkpoints: _checkpoints,
+    sessions: _sessions,
+    ...header
+  } = run('brief');
+  const envelope = {
+    schema_version: 1,
+    operation: 'runs',
+    brief: true,
+    project: '/project',
+    runs: [header],
+  };
+  assert.deepEqual(parseBriefRunsEnvelope(JSON.stringify(envelope))?.runs, [
+    header,
+  ]);
+  assert.equal(parseRunsEnvelope(JSON.stringify(envelope)), undefined);
+  assert.equal(
+    parseBriefRunsEnvelope(JSON.stringify({...envelope, brief: false})),
+    undefined,
+  );
+  assert.equal(
+    parseBriefRunsEnvelope(
+      JSON.stringify({...envelope, runs: [header, header]}),
+    ),
+    undefined,
+  );
+  assert.equal(
+    parseBriefRunsEnvelope(JSON.stringify({...envelope, runs: [run('full')]})),
+    undefined,
+  );
 });

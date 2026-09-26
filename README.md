@@ -38,7 +38,7 @@ motivation and limits.
 
 ## Get started
 
-Requires **VS Code 1.106+**, **Python 3.12+**, Git, and **verdog-cli 0.1.1+**
+Requires **VS Code 1.106+**, **Python 3.12+**, Git, and **verdog-cli 0.1.2+**
 from [PyPI](https://pypi.org/project/verdog-cli/).
 
 Install the CLI with [uv](https://docs.astral.sh/uv/getting-started/installation/):
@@ -48,8 +48,8 @@ uv tool install verdog-cli
 verdog --help
 ```
 
-For an existing installation, run `uv tool upgrade verdog-cli`. CLI 0.1.1 or newer
-is required for persisted check results and source-only catalogue inspection.
+For an existing installation, run `uv tool upgrade verdog-cli`. CLI 0.1.2 or newer
+is required for lightweight run monitoring.
 
 Install **Verdog** from VS Code's Extensions view, then:
 
@@ -66,6 +66,20 @@ For a complete agent workflow, follow the
 [Countdown walkthrough](https://drexlerd.github.io/verdog-website/running-example.html).
 Agent nodes need the provider tools and authentication selected by their
 [profile](https://drexlerd.github.io/verdog-website/profile.html).
+
+### Run monitoring
+
+The Runs view reads run headers and the latest complete line of `trace.log`.
+While visible, it checks running workflows every five seconds using their
+existing execution locks. It does not scan checkpoint histories or artifact
+inventories. Resume and fork inspect checkpoints only after you select a run.
+
+The extension excludes `**/.verdog/**` from recursive file watching by default,
+while watching run metadata and traces nonrecursively. Your
+`files.watcherExclude` overrides remain in effect. Custom output directories
+outside `.verdog` may need their own watcher exclusion if they are inside an
+open workspace. If the CLI does not support lightweight monitoring, upgrade
+it with `uv tool upgrade verdog-cli`; no full-history polling fallback is used.
 
 ## Service, sign-in, and privacy
 

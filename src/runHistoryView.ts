@@ -1,6 +1,9 @@
 /** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
 import * as vscode from 'vscode';
+import * as path from 'node:path';
+
+import {RunTrace} from './runTrace';
 
 import type {Outcome} from './cli';
 import type {HostState} from './projectHost';
@@ -13,7 +16,7 @@ import {
   parseCheckpointsEnvelope,
   parseErrorEnvelope,
   parseOperationEnvelope,
-  parseRunsEnvelope,
+  parseBriefRunsEnvelope,
   parseWorkflowArguments,
   restartCliArguments,
   resumeCliArguments,
@@ -21,7 +24,7 @@ import {
   type ErrorEnvelope,
   type OperationEnvelope,
   type RunBranch,
-  type RunSummary,
+  type RunHeader,
   type SessionPolicy,
 } from './runHistory';
 
@@ -32,7 +35,7 @@ type WorkflowTreeItem = vscode.TreeItem & {
 
 type RunTreeItem = vscode.TreeItem & {
   readonly kind: 'run';
-  readonly run: RunSummary;
+  readonly run: RunHeader;
   readonly children: RunTreeItem[];
 };
 
@@ -52,7 +55,7 @@ interface OperationResult {
   error?: ErrorEnvelope;
 }
 
-function statusIcon(status: RunSummary['status']): vscode.ThemeIcon {
+function statusIcon(status: RunHeader['status']): vscode.ThemeIcon {
   switch (status) {
     case 'running':
       return new vscode.ThemeIcon('loading~spin');
@@ -79,7 +82,7 @@ function shownArguments(args: readonly string[]): string {
   return args.length === 0 ? '[]' : JSON.stringify(args);
 }
 
-function runTooltip(run: RunSummary): string {
+function runTooltip(run: RunHeader): string {
   const parent =
     run.parent === null
       ? 'none'
@@ -87,24 +90,23 @@ function runTooltip(run: RunSummary): string {
         (run.parent.checkpoint === null
           ? ''
           : ` at checkpoint ${run.parent.checkpoint}`);
-  const resume = run.checkpoints.resume_available
-    ? `checkpoint ${run.checkpoints.latest_completed}`
-    : (run.checkpoints.unavailable_reason ?? 'unavailable');
   return [
     `Workflow: ${run.workflow.id}`,
     `Run: ${run.id}`,
     `Status: ${run.status}`,
     `Updated: ${run.updated_at}`,
     `Parent: ${parent}`,
-    `Resume: ${resume}`,
-    `Persistent conversations: ${run.sessions.persistent}`,
+    'Checkpoint details are loaded when resuming or forking.',
     `Arguments: ${shownArguments(run.launch.workflow_arguments)}`,
     `Output: ${run.output_dir}`,
   ].join('\n');
 }
 
-function makeRunItem(branch: RunBranch): RunTreeItem {
-  const children = branch.children.map(makeRunItem);
+function makeRunItem(
+  branch: RunBranch,
+  activity: ReadonlyMap<string, string>,
+): RunTreeItem {
+  const children = branch.children.map(child => makeRunItem(child, activity));
   const item = new vscode.TreeItem(
     branch.run.directory_name,
     children.length === 0
@@ -116,16 +118,20 @@ function makeRunItem(branch: RunBranch): RunTreeItem {
     run: {value: branch.run, enumerable: true},
     children: {value: children, enumerable: true},
   });
-  item.description = `${branch.run.status} · checkpoint ${branch.run.checkpoints.latest_completed ?? 'none'}`;
-  item.tooltip = runTooltip(branch.run);
+  item.description = branch.run.status;
+  const latest = activity.get(branch.run.output_dir);
+  item.tooltip =
+    runTooltip(branch.run) +
+    (latest === undefined ? '' : `\nLatest activity: ${latest}`);
   item.iconPath = statusIcon(branch.run.status);
   item.contextValue = [
     'verdogRun',
     ...(branch.run.status !== 'succeeded' &&
-    branch.run.checkpoints.resume_available
+    branch.run.status !== 'running' &&
+    branch.run.launch.checkpointing !== 'off'
       ? ['resume']
       : []),
-    ...(branch.run.checkpoints.count > 0 ? ['fork'] : []),
+    ...(branch.run.launch.checkpointing !== 'off' ? ['fork'] : []),
   ].join('.');
   item.command = {
     command: 'verdog.openRunOutput',
@@ -140,8 +146,9 @@ function makeRunItem(branch: RunBranch): RunTreeItem {
 
 function makeWorkflowItem(
   workflow: ReturnType<typeof buildRunTrees>[number],
+  activity: ReadonlyMap<string, string>,
 ): WorkflowTreeItem {
-  const children = workflow.roots.map(makeRunItem);
+  const children = workflow.roots.map(branch => makeRunItem(branch, activity));
   const item = new vscode.TreeItem(
     workflow.workflow.id,
     vscode.TreeItemCollapsibleState.Expanded,
@@ -216,10 +223,26 @@ class RunHistoryProvider
     HistoryTreeItem | undefined | void
   >();
   private items: WorkflowTreeItem[] = [];
-  private runs: RunSummary[] = [];
+  private runs: RunHeader[] = [];
   private initialized = false;
   private refreshInFlight: Promise<void> | undefined;
+  private refreshAbort: AbortController | undefined;
   private view: vscode.TreeView<HistoryTreeItem> | undefined;
+  private disposed = false;
+  private revision = 0;
+  private monitoringSupported = true;
+  private pendingRefresh = false;
+  private readonly pendingOutputs = new Set<string>();
+  private readonly subscriptions: vscode.Disposable[] = [];
+  private registryWatcher: vscode.FileSystemWatcher | undefined;
+  private readonly runWatchers = new Map<string, vscode.Disposable[]>();
+  private readonly traces = new Map<string, RunTrace>();
+  private readonly activity = new Map<string, string>();
+  private readonly pendingTraces = new Set<string>();
+  private traceRead: Promise<void> | undefined;
+  private refreshTimer: NodeJS.Timeout | undefined;
+  private traceTimer: NodeJS.Timeout | undefined;
+  private pollTimer: NodeJS.Timeout | undefined;
 
   readonly onDidChangeTreeData = this.changed.event;
 
@@ -227,9 +250,70 @@ class RunHistoryProvider
 
   attach(view: vscode.TreeView<HistoryTreeItem>): void {
     this.view = view;
+    this.subscriptions.push(
+      view.onDidChangeVisibility(() => this.visibilityChanged()),
+      vscode.window.onDidChangeWindowState(state => {
+        if (state.focused && this.canMonitor()) {
+          void this.refresh(false);
+        }
+      }),
+      vscode.workspace.onDidGrantWorkspaceTrust(() => this.visibilityChanged()),
+    );
+    this.visibilityChanged();
+  }
+
+  private canRead(): boolean {
+    return (
+      !this.disposed &&
+      this.host.root !== undefined &&
+      this.host.preview === undefined &&
+      vscode.workspace.isTrusted
+    );
+  }
+
+  private canMonitor(): boolean {
+    return this.canRead() && this.view?.visible === true;
+  }
+
+  private visibilityChanged(): void {
+    ++this.revision;
+    this.refreshAbort?.abort();
+    this.stopWatching();
+    if (this.canMonitor()) {
+      this.registryWatcher = this.watch(
+        path.join(this.host.root!, '.verdog'),
+        'run-registry.json',
+        () => this.scheduleRefresh(),
+      );
+      void this.refresh(false);
+    }
+  }
+
+  private stopWatching(): void {
+    clearTimeout(this.refreshTimer);
+    clearTimeout(this.traceTimer);
+    clearTimeout(this.pollTimer);
+    this.refreshTimer = undefined;
+    this.traceTimer = undefined;
+    this.pollTimer = undefined;
+    this.traces.clear();
+    this.pendingRefresh = false;
+    this.pendingOutputs.clear();
+    this.pendingTraces.clear();
+    this.registryWatcher?.dispose();
+    this.registryWatcher = undefined;
+    for (const watchers of this.runWatchers.values()) {
+      watchers.forEach(watcher => watcher.dispose());
+    }
+    this.runWatchers.clear();
   }
 
   dispose(): void {
+    this.disposed = true;
+    ++this.revision;
+    this.refreshAbort?.abort();
+    this.stopWatching();
+    this.subscriptions.forEach(subscription => subscription.dispose());
     this.changed.dispose();
   }
 
@@ -239,83 +323,341 @@ class RunHistoryProvider
 
   async getChildren(item?: HistoryTreeItem): Promise<HistoryTreeItem[]> {
     if (!this.initialized) {
-      await this.refresh(false);
+      await (this.refreshInFlight ?? this.refresh(false));
     }
     return item === undefined ? this.items : item.children;
   }
 
-  async refresh(reportFailure = true): Promise<void> {
+  private publish(): void {
+    this.items = buildRunTrees(this.runs).map(workflow =>
+      makeWorkflowItem(workflow, this.activity),
+    );
+    this.changed.fire();
+  }
+
+  private watch(
+    directory: string,
+    filename: string,
+    changed: () => void,
+  ): vscode.FileSystemWatcher {
+    // No slash or ** in the pattern: excluded generated directories need only
+    // an exact, nonrecursive parent watch, never an artifact-tree watch.
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(directory, filename),
+    );
+    watcher.onDidChange(changed);
+    watcher.onDidCreate(changed);
+    watcher.onDidDelete(changed);
+    return watcher;
+  }
+
+  private syncRunWatchers(): void {
+    if (!this.canMonitor()) {
+      return;
+    }
+    const outputs = new Set(this.runs.map(run => run.output_dir));
+    for (const [output, watchers] of this.runWatchers) {
+      if (!outputs.has(output)) {
+        watchers.forEach(watcher => watcher.dispose());
+        this.runWatchers.delete(output);
+        this.traces.delete(output);
+        this.activity.delete(output);
+      }
+    }
+    for (const output of outputs) {
+      if (this.runWatchers.has(output)) {
+        continue;
+      }
+      this.runWatchers.set(output, [
+        this.watch(output, '{trace,trace.log}', () =>
+          this.scheduleTrace(output),
+        ),
+        this.watch(path.join(output, '.verdog'), 'run.json', () =>
+          this.scheduleRefresh(output),
+        ),
+      ]);
+      this.scheduleTrace(output);
+    }
+  }
+
+  private scheduleRefresh(output?: string): void {
+    if (!this.canMonitor() || !this.monitoringSupported) {
+      return;
+    }
+    if (output === undefined) {
+      this.pendingRefresh = true;
+    } else {
+      this.pendingOutputs.add(output);
+    }
+    // A fixed debounce deadline cannot be postponed forever by a busy run.
+    if (this.refreshTimer === undefined) {
+      this.refreshTimer = setTimeout(() => {
+        this.refreshTimer = undefined;
+        if (this.canMonitor()) {
+          void this.refresh(
+            false,
+            this.pendingRefresh ? undefined : [...this.pendingOutputs],
+          );
+        }
+      }, 250);
+    }
+  }
+
+  private scheduleTrace(output: string): void {
+    if (!this.canMonitor()) {
+      return;
+    }
+    this.pendingTraces.add(output);
+    if (this.traceTimer === undefined) {
+      this.traceTimer = setTimeout(() => {
+        this.traceTimer = undefined;
+        void this.readTraces();
+      }, 250);
+    }
+  }
+
+  private async readTraces(): Promise<void> {
+    if (this.traceRead !== undefined) {
+      return this.traceRead;
+    }
+    const revision = this.revision;
+    const read = async () => {
+      while (
+        this.canMonitor() &&
+        revision === this.revision &&
+        this.pendingTraces.size > 0
+      ) {
+        const outputs = [...this.pendingTraces];
+        this.pendingTraces.clear();
+        for (const output of outputs) {
+          const trace = this.traces.get(output) ?? new RunTrace(output);
+          this.traces.set(output, trace);
+          try {
+            const line = await trace.read();
+            if (
+              !this.canMonitor() ||
+              revision !== this.revision ||
+              !this.runWatchers.has(output)
+            ) {
+              return;
+            }
+            // Registration precedes lease acquisition. The first trace line
+            // may be our first observation after that run actually starts.
+            if (
+              line !== undefined &&
+              line !== this.activity.get(output) &&
+              this.runs.some(
+                run =>
+                  run.output_dir === output && run.status === 'interrupted',
+              )
+            ) {
+              this.scheduleRefresh(output);
+            }
+            if (line === undefined) {
+              this.activity.delete(output);
+            } else {
+              this.activity.set(output, line);
+            }
+          } catch (error) {
+            this.host.output.appendLine(
+              `reading run trace failed: ${String(error)}`,
+            );
+          }
+        }
+        if (this.canMonitor() && revision === this.revision) {
+          this.publish();
+        }
+      }
+    };
+    this.traceRead = read().finally(() => {
+      this.traceRead = undefined;
+      if (this.canMonitor() && this.pendingTraces.size > 0) {
+        this.scheduleTrace(this.pendingTraces.values().next().value!);
+      }
+    });
+    return this.traceRead;
+  }
+
+  private schedulePoll(): void {
+    clearTimeout(this.pollTimer);
+    if (
+      !this.canMonitor() ||
+      !this.monitoringSupported ||
+      !this.runs.some(run => run.status === 'running')
+    ) {
+      return;
+    }
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = undefined;
+      if (this.canMonitor()) {
+        const outputs = this.runs
+          .filter(run => run.status === 'running')
+          .map(run => run.output_dir);
+        if (outputs.length > 0) {
+          void this.refresh(false, outputs);
+        }
+      }
+    }, 5000);
+  }
+
+  async refresh(
+    reportFailure = true,
+    outputs?: readonly string[],
+  ): Promise<void> {
+    if (!this.canRead()) {
+      this.runs = [];
+      this.initialized = true;
+      if (this.view !== undefined) {
+        this.view.message =
+          this.host.root === undefined
+            ? 'Open a Verdog project to see its runs.'
+            : this.host.preview !== undefined
+              ? 'Import into a trusted project to run this workflow.'
+              : 'Trust this workspace to read local runs.';
+      }
+      if (!this.disposed) {
+        this.publish();
+      }
+      return;
+    }
+    if (outputs === undefined) {
+      this.pendingRefresh = true;
+    } else {
+      outputs.forEach(output => this.pendingOutputs.add(output));
+    }
     if (this.refreshInFlight !== undefined) {
       return this.refreshInFlight;
     }
+    clearTimeout(this.refreshTimer);
+    this.refreshTimer = undefined;
     const update = async () => {
-      const root = this.host.root;
-      if (root === undefined) {
-        this.items = [];
-        this.runs = [];
-        this.initialized = true;
-        if (this.view !== undefined) {
-          this.view.message = 'Open a Verdog project to see its runs.';
-        }
-        this.changed.fire();
+      while (
+        this.canRead() &&
+        (this.pendingRefresh || this.pendingOutputs.size > 0)
+      ) {
+        const selected = this.pendingRefresh
+          ? undefined
+          : [...this.pendingOutputs];
+        this.pendingRefresh = false;
+        this.pendingOutputs.clear();
+        await this.readHeaders(selected, reportFailure);
+      }
+    };
+    this.refreshInFlight = update().finally(() => {
+      this.refreshInFlight = undefined;
+      this.schedulePoll();
+    });
+    return this.refreshInFlight;
+  }
+
+  private async readHeaders(
+    outputs: readonly string[] | undefined,
+    reportFailure: boolean,
+  ): Promise<void> {
+    const root = this.host.root!;
+    const revision = this.revision;
+    const abort = new AbortController();
+    this.refreshAbort = abort;
+    try {
+      const result = await runVerdogCommand(
+        root,
+        [
+          'runs',
+          '--brief',
+          '--json',
+          ...(outputs ?? []).flatMap(output => ['--output', output]),
+        ],
+        {
+          announce: false,
+          output: this.host.output,
+          streamOutput: false,
+          structured: true,
+          trust: 'caller-verified',
+          signal: abort.signal,
+        },
+      );
+      if (
+        abort.signal.aborted ||
+        !this.canRead() ||
+        revision !== this.revision ||
+        root !== this.host.root
+      ) {
         return;
       }
-      if (this.host.preview !== undefined || !vscode.workspace.isTrusted) {
-        this.items = [];
-        this.runs = [];
-        this.initialized = true;
-        if (this.view !== undefined) {
-          this.view.message =
-            this.host.preview === undefined
-              ? 'Trust this workspace to read local runs.'
-              : 'Import into a trusted project to run this workflow.';
-        }
-        this.changed.fire();
-        return;
-      }
-      const result = await runVerdogCommand(root, ['runs', '--json'], {
-        announce: false,
-        output: this.host.output,
-        streamOutput: false,
-        structured: true,
-        trust: 'caller-verified',
-      });
       const envelope =
-        result.code === 0 ? parseRunsEnvelope(result.stdout) : undefined;
+        result.code === 0 ? parseBriefRunsEnvelope(result.stdout) : undefined;
       if (envelope === undefined) {
         const problem =
           parseErrorEnvelope(result.stdout)?.error.message ??
-          (result.stderr.trim() || 'verdog runs produced invalid JSON.');
-        this.host.output.appendLine(`run history refresh failed: ${problem}`);
-        if (this.view !== undefined) {
-          this.view.message = this.initialized
-            ? 'Refresh failed; showing the last valid run list.'
-            : 'Run history could not be loaded. See the Verdog output.';
-        }
-        if (reportFailure) {
-          void vscode.window.showWarningMessage(
-            'Verdog run history could not be refreshed. See the Verdog output.',
+          (result.stderr.trim() ||
+            'verdog runs --brief produced invalid JSON.');
+        this.monitoringSupported =
+          !/unrecognized arguments|unrecognized option|upgrade verdog|brief.*unavailable/i.test(
+            problem,
           );
-        }
-        this.initialized = true;
+        this.reportRefreshFailure(
+          this.monitoringSupported
+            ? problem
+            : 'Upgrade verdog-cli with `uv tool upgrade verdog-cli` to enable lightweight run monitoring.',
+          reportFailure,
+        );
         return;
       }
-      this.runs = envelope.runs;
-      this.items = buildRunTrees(this.runs).map(makeWorkflowItem);
+      if (
+        envelope.runs.some(run => !path.isAbsolute(run.output_dir)) ||
+        (outputs !== undefined &&
+          envelope.runs.some(run => !outputs.includes(run.output_dir)))
+      ) {
+        this.reportRefreshFailure(
+          'The CLI returned an unexpected run output directory.',
+          reportFailure,
+        );
+        return;
+      }
+      this.monitoringSupported = true;
+      this.runs =
+        outputs === undefined
+          ? envelope.runs
+          : [
+              ...this.runs.filter(run => !outputs.includes(run.output_dir)),
+              ...envelope.runs,
+            ];
       this.initialized = true;
       if (this.view !== undefined) {
         this.view.message =
           this.runs.length === 0 ? 'No local workflow runs yet.' : undefined;
       }
-      this.changed.fire();
-    };
-    this.refreshInFlight = update().finally(() => {
-      this.refreshInFlight = undefined;
-    });
-    return this.refreshInFlight;
+      this.syncRunWatchers();
+      this.publish();
+    } catch (error) {
+      if (
+        !abort.signal.aborted &&
+        this.canRead() &&
+        revision === this.revision
+      ) {
+        this.reportRefreshFailure(String(error), reportFailure);
+      }
+    } finally {
+      if (this.refreshAbort === abort) {
+        this.refreshAbort = undefined;
+      }
+    }
   }
 
-  private runById(reference: string): RunSummary | undefined {
+  private reportRefreshFailure(problem: string, reportFailure: boolean): void {
+    this.host.output.appendLine(`run history refresh failed: ${problem}`);
+    if (this.view !== undefined) {
+      this.view.message = problem;
+    }
+    if (reportFailure) {
+      void vscode.window.showWarningMessage(
+        `Verdog run history could not be refreshed: ${problem}`,
+      );
+    }
+    this.initialized = true;
+  }
+
+  private runById(reference: string): RunHeader | undefined {
     const matches = this.runs.filter(
       run =>
         run.id === reference ||
@@ -328,7 +670,7 @@ class RunHistoryProvider
   async chooseRun(
     value: unknown,
     title: string,
-  ): Promise<RunSummary | undefined> {
+  ): Promise<RunHeader | undefined> {
     if (!this.initialized) {
       await this.refresh();
     }
@@ -356,14 +698,14 @@ class RunHistoryProvider
   }
 
   async checkpoints(
-    run: RunSummary,
+    run: RunHeader,
   ): Promise<ReturnType<typeof parseCheckpointsEnvelope>> {
     const root = this.host.root;
     if (root === undefined) {
       return undefined;
     }
     const result = await this.runCli(
-      ['checkpoints', run.id, '--json'],
+      ['checkpoints', run.output_dir, '--json'],
       `Reading checkpoints for ${run.directory_name}`,
       false,
     );
@@ -520,7 +862,7 @@ async function sessionPolicy(
 }
 
 async function replacementArguments(
-  run: RunSummary,
+  run: RunHeader,
   request: RunCommandRequest | undefined,
 ): Promise<readonly string[] | undefined | false> {
   if (
@@ -667,7 +1009,7 @@ export function registerRunHistory(host: HostState): vscode.Disposable[] {
       }
       const request = commandRequest(given);
       let result = await provider.runOperation(
-        resumeCliArguments(current.id, request?.retryIncomplete),
+        resumeCliArguments(current.output_dir, request?.retryIncomplete),
         'Resuming workflow',
       );
       const operationError = result.operation?.error ?? result.error?.error;
@@ -682,7 +1024,7 @@ export function registerRunHistory(host: HostState): vscode.Disposable[] {
         );
         if (retry === 'Retry incomplete invocation') {
           result = await provider.runOperation(
-            resumeCliArguments(current.id, true),
+            resumeCliArguments(current.output_dir, true),
             'Resuming workflow',
           );
         }
@@ -704,19 +1046,22 @@ export function registerRunHistory(host: HostState): vscode.Disposable[] {
       const request = commandRequest(given);
       let current = run;
       let branchAvailable = false;
+      let persistent = 0;
       if (request?.sessions !== 'fresh') {
         const inspected = await provider.checkpoints(run);
-        if (inspected !== undefined) {
-          current = inspected.run;
-          branchAvailable = inspected.checkpoints.some(
-            checkpoint => checkpoint.fork_with_branch_available,
-          );
+        if (inspected === undefined) {
+          return;
         }
+        current = inspected.run;
+        persistent = inspected.run.sessions.persistent;
+        branchAvailable = inspected.checkpoints.some(
+          checkpoint => checkpoint.fork_with_branch_available,
+        );
       }
       const sessions = await sessionPolicy(
         request?.sessions,
         branchAvailable,
-        current.sessions.persistent,
+        persistent,
         'Restart conversations',
       );
       if (sessions === undefined) {
@@ -743,7 +1088,7 @@ export function registerRunHistory(host: HostState): vscode.Disposable[] {
       }
       const result = await provider.runOperation(
         restartCliArguments(
-          current.id,
+          current.output_dir,
           sessions,
           args === undefined ? undefined : [...args],
         ),
@@ -804,7 +1149,7 @@ export function registerRunHistory(host: HostState): vscode.Disposable[] {
         return;
       }
       const result = await provider.runOperation(
-        forkCliArguments(run.id, checkpoint.sequence, sessions),
+        forkCliArguments(run.output_dir, checkpoint.sequence, sessions),
         'Forking workflow',
       );
       await provider.showOperationResult(result, 'Fork');
@@ -840,53 +1185,5 @@ export function registerRunHistory(host: HostState): vscode.Disposable[] {
     fork,
     open,
   ];
-  if (host.root !== undefined && host.preview === undefined) {
-    const watchers = [
-      vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(
-          host.root,
-          '.verdog/runs/**/.verdog/run.json',
-        ),
-      ),
-      vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(
-          host.root,
-          '.verdog/runs/**/.verdog/checkpoints/*',
-        ),
-      ),
-      vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(
-          host.root,
-          '.verdog/runs/**/.verdog/checkpoints/*/manifest.json',
-        ),
-      ),
-      vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(host.root, '.verdog/run-registry.json'),
-      ),
-    ];
-    let scheduled: NodeJS.Timeout | undefined;
-    const schedule = () => {
-      if (scheduled !== undefined) {
-        clearTimeout(scheduled);
-      }
-      scheduled = setTimeout(() => {
-        scheduled = undefined;
-        void provider.refresh(false);
-      }, 250);
-    };
-    for (const watcher of watchers) {
-      watcher.onDidChange(schedule);
-      watcher.onDidCreate(schedule);
-      watcher.onDidDelete(schedule);
-      disposables.push(watcher);
-    }
-    disposables.push({
-      dispose: () => {
-        if (scheduled !== undefined) {
-          clearTimeout(scheduled);
-        }
-      },
-    });
-  }
   return disposables;
 }

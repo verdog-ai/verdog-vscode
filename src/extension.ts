@@ -1,6 +1,7 @@
 /** AGPL-3.0-only with the additional permission in LICENSE-EXCEPTION. */
 
 import * as vscode from 'vscode';
+import * as path from 'node:path';
 
 import {registerCanvas, showCanvas} from './canvasView';
 import {initializeBackend} from './backend';
@@ -122,11 +123,19 @@ export async function activate(
   const watcher = vscode.workspace.createFileSystemWatcher(
     new vscode.RelativePattern(host.root, '**/*'),
   );
-  watcher.onDidChange(changed);
-  watcher.onDidCreate(changed);
-  watcher.onDidDelete(changed);
+  // Generated data is excluded from the workspace watcher. The check receipt
+  // needs only its immediate parent watched, including atomic replacements.
+  const receiptWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(path.join(host.root, '.verdog'), 'check.json'),
+  );
+  for (const source of [watcher, receiptWatcher]) {
+    source.onDidChange(changed);
+    source.onDidCreate(changed);
+    source.onDidDelete(changed);
+  }
   context.subscriptions.push(
     watcher,
+    receiptWatcher,
     {dispose: () => clearTimeout(refreshTimer)},
     vscode.workspace.onDidChangeTextDocument(event => {
       if (event.document.isDirty) {

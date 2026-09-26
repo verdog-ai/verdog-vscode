@@ -142,106 +142,392 @@ function host(current?: ProjectSnapshot): OpenHost {
   } as unknown as OpenHost;
 }
 
-test(
-  'run history refreshes after committed checkpoint events without a run.json write',
-  {timeout: 10000},
-  async () => {
-    const watchers = new Map<string, Map<string, () => void>>();
-    const disposable = {dispose() {}};
-    let refreshed = deferred<void>();
-    let reads = 0;
-    const {registerRunHistory} = await load<typeof import('./runHistoryView')>(
-      'runHistoryView.ts',
-      {
-        vscode: {
-          commands: {registerCommand: () => disposable},
-          EventEmitter: class {
-            event() {
-              return disposable;
-            }
-            fire() {
-              refreshed.resolve();
-            }
-            dispose() {}
+// The monitor's IO boundaries are mocked; the real provider, timers, decoding,
+// and event coalescing execute unchanged.
+async function runMonitor(
+  options: {trusted?: boolean; preview?: boolean; unsupported?: boolean} = {},
+) {
+  const disposable = {dispose() {}};
+  const watchers = new Map<string, Map<string, () => void>>();
+  const calls: string[][] = [];
+  const warnings: string[] = [];
+  const header = {
+    id: 'run',
+    directory_name: 'run',
+    workflow: {id: 'main', definition_id: 'demo.main', module: 'demo.main'},
+    status: 'running',
+    started_at: '2026-09-26T12:00:00Z',
+    updated_at: '2026-09-26T12:00:00Z',
+    output_dir: '/test/project/.verdog/runs/run',
+    launch: {workflow_arguments: [], checkpointing: 'auto'},
+    parent: null,
+  };
+  let headers = [header];
+  let hold: Promise<void> | undefined;
+  let traceReads = 0;
+  let visibilityChanged = () => {};
+  let focusChanged = (_state: {focused: boolean}) => {};
+  let provider!: {
+    refresh(reportFailure?: boolean): Promise<void>;
+    getChildren(
+      item?: unknown,
+    ): Promise<Array<{children: Array<{tooltip: string}>}>>;
+    checkpoints(run: unknown): Promise<unknown>;
+  };
+  const view = {
+    ...disposable,
+    visible: false,
+    message: '',
+    onDidChangeVisibility(callback: () => void) {
+      visibilityChanged = callback;
+      return disposable;
+    },
+  };
+  const {registerRunHistory} = await load<typeof import('./runHistoryView')>(
+    'runHistoryView.ts',
+    {
+      vscode: {
+        commands: {registerCommand: () => disposable},
+        EventEmitter: class {
+          event() {
+            return disposable;
+          }
+          fire() {}
+          dispose() {}
+        },
+        TreeItem: class {},
+        ThemeIcon: class {},
+        ThemeColor: class {},
+        TreeItemCollapsibleState: {None: 0, Collapsed: 1, Expanded: 2},
+        RelativePattern: class {
+          constructor(
+            readonly base: string,
+            readonly pattern: string,
+          ) {}
+        },
+        ProgressLocation: {Notification: 15},
+        window: {
+          createTreeView: (
+            _id: string,
+            config: {treeDataProvider: typeof provider},
+          ) => {
+            provider = config.treeDataProvider;
+            return view;
           },
-          RelativePattern: class {
-            constructor(
-              readonly base: string,
-              readonly pattern: string,
-            ) {}
+          onDidChangeWindowState: (callback: typeof focusChanged) => {
+            focusChanged = callback;
+            return disposable;
           },
-          window: {createTreeView: () => ({...disposable, message: ''})},
-          workspace: {
-            isTrusted: true,
-            createFileSystemWatcher: ({pattern}: {pattern: string}) => {
-              const events = new Map<string, () => void>();
-              watchers.set(pattern, events);
-              return {
-                ...disposable,
-                onDidChange: (callback: () => void) => {
-                  events.set('change', callback);
-                  return disposable;
-                },
-                onDidCreate: (callback: () => void) => {
-                  events.set('create', callback);
-                  return disposable;
-                },
-                onDidDelete: (callback: () => void) => {
-                  events.set('delete', callback);
-                  return disposable;
-                },
-              };
-            },
+          showWarningMessage: (message: string) => {
+            warnings.push(message);
           },
         },
-        './verdogCommand': {
-          runVerdogCommand: async (_root: string, args: string[]) => {
-            assert.deepEqual(args, ['runs', '--json']);
-            ++reads;
+        workspace: {
+          isTrusted: options.trusted ?? true,
+          onDidGrantWorkspaceTrust: () => disposable,
+          createFileSystemWatcher: ({
+            base,
+            pattern,
+          }: {
+            base: string;
+            pattern: string;
+          }) => {
+            assert.ok(
+              !pattern.includes('/') && !pattern.includes('**'),
+              'only exact-parent, nonrecursive watches',
+            );
+            const key = `${base}|${pattern}`;
+            const events = new Map<string, () => void>();
+            watchers.set(key, events);
             return {
-              code: 0,
-              combined: '',
-              stderr: '',
-              stdout: JSON.stringify({
-                schema_version: 1,
-                operation: 'runs',
-                project: '/test/project',
-                runs: [],
-              }),
+              dispose() {
+                watchers.delete(key);
+              },
+              onDidChange(callback: () => void) {
+                events.set('change', callback);
+                return disposable;
+              },
+              onDidCreate(callback: () => void) {
+                events.set('create', callback);
+                return disposable;
+              },
+              onDidDelete(callback: () => void) {
+                events.set('delete', callback);
+                return disposable;
+              },
             };
           },
         },
       },
+      './runTrace': {
+        RunTrace: class {
+          async read() {
+            ++traceReads;
+            return '[time] START main/step/000001';
+          }
+        },
+      },
+      './verdogCommand': {
+        runVerdogCommand: async (_root: string, args: string[]) => {
+          calls.push(args);
+          if (args[0] === 'checkpoints') {
+            return {
+              code: 1,
+              combined: '',
+              stdout: '',
+              stderr: 'No checkpoints',
+            };
+          }
+          assert.deepEqual(args.slice(0, 3), ['runs', '--brief', '--json']);
+          const pending = hold;
+          hold = undefined;
+          await pending;
+          if (options.unsupported) {
+            return {
+              code: 2,
+              combined: '',
+              stdout: '',
+              stderr: 'unrecognized arguments: --brief',
+            };
+          }
+          const selected = args.slice(3).filter((_, index) => index % 2 === 1);
+          return {
+            code: 0,
+            combined: '',
+            stderr: '',
+            stdout: JSON.stringify({
+              schema_version: 1,
+              operation: 'runs',
+              brief: true,
+              project: '/test/project',
+              runs:
+                selected.length === 0
+                  ? headers
+                  : headers.filter(run => selected.includes(run.output_dir)),
+            }),
+          };
+        },
+      },
+    },
+  );
+  const state = host();
+  if (options.preview) {
+    Object.assign(state, {preview: {}});
+  }
+  const subscriptions = registerRunHistory(state);
+  return {
+    calls,
+    warnings,
+    header,
+    watchers,
+    provider,
+    view,
+    get traceReads() {
+      return traceReads;
+    },
+    setHeaders(value: typeof headers) {
+      headers = value;
+    },
+    hold(value: Promise<void>) {
+      hold = value;
+    },
+    visible(value: boolean) {
+      view.visible = value;
+      visibilityChanged();
+    },
+    focus() {
+      focusChanged({focused: true});
+    },
+    emit(base: string, name: string, event = 'change') {
+      watchers.get(`${base}|${name}`)!.get(event)!();
+    },
+    dispose() {
+      subscriptions.forEach(subscription => subscription.dispose());
+    },
+  };
+}
+
+async function settleMonitor(): Promise<void> {
+  for (let turn = 0; turn < 8; ++turn) {
+    await new Promise<void>(resolve => setImmediate(resolve));
+  }
+}
+
+test('run monitoring tails traces and probes only active run headers without scanning checkpoints', async context => {
+  const monitor = await runMonitor();
+  context.mock.timers.enable({apis: ['setTimeout']});
+  try {
+    monitor.visible(true);
+    await settleMonitor();
+    assert.equal(monitor.calls.length, 1);
+    assert.equal(
+      monitor.watchers.size,
+      3,
+      'one registry and two shallow run watches',
     );
-    const subscriptions = registerRunHistory(host());
-    try {
-      assert.deepEqual(
-        [...watchers.keys()].sort(),
-        [
-          '.verdog/run-registry.json',
-          '.verdog/runs/**/.verdog/checkpoints/*',
-          '.verdog/runs/**/.verdog/checkpoints/*/manifest.json',
-          '.verdog/runs/**/.verdog/run.json',
-        ],
-        'watch committed checkpoints and manifests, never the staging directory',
-      );
-      for (const [pattern, event] of [
-        ['.verdog/runs/**/.verdog/checkpoints/*', 'create'],
-        ['.verdog/runs/**/.verdog/checkpoints/*/manifest.json', 'change'],
-        ['.verdog/runs/**/.verdog/checkpoints/*', 'delete'],
-      ]) {
-        refreshed = deferred<void>();
-        watchers.get(pattern)!.get(event)!();
-        await refreshed.promise;
-      }
-      assert.equal(reads, 3);
-    } finally {
-      for (const subscription of subscriptions) {
-        subscription.dispose();
-      }
+    context.mock.timers.tick(250);
+    await settleMonitor();
+    const before = monitor.traceReads;
+    for (let i = 0; i < 100; ++i) {
+      monitor.emit(monitor.header.output_dir, '{trace,trace.log}');
     }
-  },
-);
+    context.mock.timers.tick(250);
+    await settleMonitor();
+    assert.equal(monitor.traceReads, before + 1);
+    assert.equal(
+      monitor.calls.length,
+      1,
+      'trace activity never reloads history',
+    );
+    const tree = await monitor.provider.getChildren();
+    assert.match(tree[0].children[0].tooltip, /Latest activity: .*START main/);
+    context.mock.timers.tick(5000);
+    await settleMonitor();
+    assert.deepEqual(monitor.calls[1], [
+      'runs',
+      '--brief',
+      '--json',
+      '--output',
+      monitor.header.output_dir,
+    ]);
+    monitor.setHeaders([{...monitor.header, status: 'interrupted'}]);
+    context.mock.timers.tick(5000);
+    await settleMonitor();
+    const count = monitor.calls.length;
+    context.mock.timers.tick(15000);
+    await settleMonitor();
+    assert.equal(
+      monitor.calls.length,
+      count,
+      'no periodic work after the run stops',
+    );
+    monitor.visible(false);
+    assert.equal(monitor.watchers.size, 0);
+    context.mock.timers.tick(15000);
+    await settleMonitor();
+    assert.equal(monitor.calls.length, count, 'hidden views do not poll');
+    await monitor.provider.checkpoints(monitor.header);
+    assert.deepEqual(monitor.calls.at(-1), [
+      'checkpoints',
+      monitor.header.output_dir,
+      '--json',
+    ]);
+  } finally {
+    monitor.dispose();
+  }
+});
+
+test('monitor preserves one pending refresh, ignores hidden responses, and recreates shallow watches', async context => {
+  const monitor = await runMonitor();
+  context.mock.timers.enable({apis: ['setTimeout']});
+  try {
+    monitor.visible(true);
+    await settleMonitor();
+    const blocked = deferred<void>();
+    monitor.hold(blocked.promise);
+    monitor.emit(path.join(monitor.header.output_dir, '.verdog'), 'run.json');
+    context.mock.timers.tick(250);
+    await settleMonitor();
+    for (let i = 0; i < 100; ++i) {
+      monitor.emit(path.join(monitor.header.output_dir, '.verdog'), 'run.json');
+    }
+    context.mock.timers.tick(250);
+    await settleMonitor();
+    assert.equal(monitor.calls.length, 2, 'requests do not overlap');
+    blocked.resolve();
+    await settleMonitor();
+    assert.equal(
+      monitor.calls.length,
+      3,
+      'events during IO produce one follow-up',
+    );
+    const hidden = deferred<void>();
+    monitor.hold(hidden.promise);
+    monitor.focus();
+    await settleMonitor();
+    monitor.visible(false);
+    hidden.resolve();
+    await settleMonitor();
+    assert.equal(
+      monitor.watchers.size,
+      0,
+      'stale response cannot restart watches',
+    );
+    monitor.visible(true);
+    await settleMonitor();
+    assert.equal(monitor.watchers.size, 3);
+    const count = monitor.calls.length;
+    monitor.emit(
+      path.join('/test/project', '.verdog'),
+      'run-registry.json',
+      'create',
+    );
+    context.mock.timers.tick(250);
+    await settleMonitor();
+    assert.deepEqual(monitor.calls[count], ['runs', '--brief', '--json']);
+    monitor.dispose();
+    context.mock.timers.tick(10000);
+    await settleMonitor();
+    assert.equal(monitor.calls.length, count + 1);
+  } finally {
+    monitor.dispose();
+  }
+});
+
+test('trace activity corrects registration observed before the execution lease was acquired', async context => {
+  const monitor = await runMonitor();
+  context.mock.timers.enable({apis: ['setTimeout']});
+  try {
+    monitor.setHeaders([{...monitor.header, status: 'interrupted'}]);
+    monitor.visible(true);
+    await settleMonitor();
+    monitor.setHeaders([monitor.header]);
+    context.mock.timers.tick(250);
+    await settleMonitor();
+    context.mock.timers.tick(250);
+    await settleMonitor();
+    assert.deepEqual(monitor.calls[1], [
+      'runs',
+      '--brief',
+      '--json',
+      '--output',
+      monitor.header.output_dir,
+    ]);
+    const tree = await monitor.provider.getChildren();
+    assert.match(tree[0].children[0].tooltip, /Status: running/);
+    context.mock.timers.tick(5000);
+    await settleMonitor();
+    assert.equal(monitor.calls.length, 3, 'the running run is now polled');
+  } finally {
+    monitor.dispose();
+  }
+});
+
+test('previews and untrusted workspaces never monitor, and old CLIs never trigger a full-scan fallback', async context => {
+  for (const options of [{trusted: false}, {preview: true}]) {
+    const monitor = await runMonitor(options);
+    try {
+      monitor.visible(true);
+      await monitor.provider.getChildren();
+      assert.equal(monitor.calls.length, 0);
+      assert.equal(monitor.watchers.size, 0);
+    } finally {
+      monitor.dispose();
+    }
+  }
+  const old = await runMonitor({unsupported: true});
+  context.mock.timers.enable({apis: ['setTimeout']});
+  try {
+    old.visible(true);
+    await settleMonitor();
+    assert.match(old.view.message, /Upgrade verdog-cli/);
+    context.mock.timers.tick(10000);
+    await settleMonitor();
+    assert.equal(old.calls.length, 1);
+  } finally {
+    old.dispose();
+  }
+});
 
 async function graphActions() {
   const state = host(snapshot('graph'));
@@ -1295,6 +1581,7 @@ test('preview run history never starts a CLI process or execution command', asyn
       vscode: {
         workspace: {
           isTrusted: true,
+          onDidGrantWorkspaceTrust: () => disposable,
           createFileSystemWatcher: () => {
             throw new Error('Preview must not watch local runs');
           },
@@ -1306,7 +1593,13 @@ test('preview run history never starts a CLI process or execution command', asyn
           },
         },
         window: {
-          createTreeView: () => ({...disposable, message: ''}),
+          createTreeView: () => ({
+            ...disposable,
+            visible: true,
+            message: '',
+            onDidChangeVisibility: () => disposable,
+          }),
+          onDidChangeWindowState: () => disposable,
           showWarningMessage() {},
         },
         EventEmitter: class {

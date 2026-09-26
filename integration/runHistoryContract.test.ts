@@ -135,6 +135,7 @@ test('Python run-history producers use the canonical wire version', async () => 
     readFile(repositoryFile('verdog-cli/verdog_cli/main.py'), 'utf8'),
   ]);
   assertCanonicalProducerVersion(runs, 'list_runs');
+  assertCanonicalProducerVersion(runs, '_list_brief_runs');
   assertCanonicalProducerVersion(runs, 'list_checkpoints');
   assertCanonicalProducerVersion(entry, '_error_document');
   assertCanonicalProducerVersion(entry, '_operation_document');

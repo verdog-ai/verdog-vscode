@@ -10,6 +10,8 @@ Catalogue inspection stores repository checkouts, README metadata, and temporary
 
 The extension stores its Verdog session token in VS Code SecretStorage, bound to the configured backend, GitHub account, and catalogue access mode. VS Code manages its GitHub sign-in session. Neither token is written into project files, logs, or command arguments by the extension. Editor calls explicitly prevent falling back to terminal or clone credentials. Separate terminal CLI sessions may still store credentials in `$XDG_CONFIG_HOME/verdog/session.json` or `~/.config/verdog/session.json`; those are not the extension's sign-in storage.
 
+While the Runs view is visible, the extension reads local run headers and bounded trace tails and checks execution locks to update progress and status. These monitoring reads do not upload run content. Checkpoint histories are inspected when you choose to resume or fork a run.
+
 Successful checks save source paths, content hashes, and diagnostics locally in `.verdog/check.json`. The extension reads this record to show whether the saved sources still match the check.
 
 ## Connections to a Verdog service

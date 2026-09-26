@@ -27,7 +27,7 @@ export interface RunParent {
   arguments: 'reused' | 'overridden' | 'checkpoint';
 }
 
-export interface RunSummary {
+export interface RunHeader {
   id: string;
   directory_name: string;
   workflow: WorkflowIdentity;
@@ -40,6 +40,9 @@ export interface RunSummary {
     checkpointing: CheckpointPolicy;
   };
   parent: RunParent | null;
+}
+
+export interface RunSummary extends RunHeader {
   checkpoints: {
     count: number;
     latest_completed: number | null;
@@ -89,6 +92,14 @@ export interface RunsEnvelope {
   runs: RunSummary[];
 }
 
+export interface BriefRunsEnvelope {
+  schema_version: typeof RUN_HISTORY_SCHEMA_VERSION;
+  operation: 'runs';
+  brief: true;
+  project: string;
+  runs: RunHeader[];
+}
+
 export interface CheckpointsEnvelope {
   schema_version: typeof RUN_HISTORY_SCHEMA_VERSION;
   operation: 'checkpoints';
@@ -127,7 +138,11 @@ type OperationWireEnvelope = Omit<OperationEnvelope, 'error'> & {
   error?: OperationError | null;
 };
 type RunHistoryEnvelope =
-  RunsEnvelope | CheckpointsEnvelope | OperationWireEnvelope | ErrorEnvelope;
+  | RunsEnvelope
+  | BriefRunsEnvelope
+  | CheckpointsEnvelope
+  | OperationWireEnvelope
+  | ErrorEnvelope;
 
 const validateEnvelope = new Ajv({strict: true}).compile<RunHistoryEnvelope>(
   runHistorySchema,
@@ -149,10 +164,24 @@ function unique<T>(values: readonly T[]): boolean {
 /** Invalid or unsupported CLI output is not partially accepted. */
 export function parseRunsEnvelope(stdout: string): RunsEnvelope | undefined {
   const value = validated(stdout);
-  if (value?.operation !== 'runs' || 'status' in value) {
+  if (value?.operation !== 'runs' || 'status' in value || 'brief' in value) {
     return undefined;
   }
   return unique(value.runs.map(({id}) => id)) ? value : undefined;
+}
+
+/** Monitoring requires headers; never accept a full-history response as a fallback. */
+export function parseBriefRunsEnvelope(
+  stdout: string,
+): BriefRunsEnvelope | undefined {
+  const value = validated(stdout);
+  if (value?.operation !== 'runs' || 'status' in value || !('brief' in value)) {
+    return undefined;
+  }
+  return unique(value.runs.map(({id}) => id)) &&
+    unique(value.runs.map(({output_dir}) => output_dir))
+    ? value
+    : undefined;
 }
 
 export function parseCheckpointsEnvelope(
@@ -204,11 +233,11 @@ export interface RunTree {
 }
 
 export interface RunBranch {
-  run: RunSummary;
+  run: RunHeader;
   children: RunBranch[];
 }
 
-function newestFirst(left: RunSummary, right: RunSummary): number {
+function newestFirst(left: RunHeader, right: RunHeader): number {
   return (
     right.updated_at.localeCompare(left.updated_at) ||
     right.id.localeCompare(left.id)
@@ -216,8 +245,8 @@ function newestFirst(left: RunSummary, right: RunSummary): number {
 }
 
 /** Build a deterministic lineage forest without trusting malformed parent cycles. */
-export function buildRunTrees(runs: readonly RunSummary[]): RunTree[] {
-  const groups = new Map<string, RunSummary[]>();
+export function buildRunTrees(runs: readonly RunHeader[]): RunTree[] {
+  const groups = new Map<string, RunHeader[]>();
   for (const run of runs) {
     const existing = groups.get(run.workflow.definition_id) ?? [];
     existing.push(run);
