@@ -16,6 +16,10 @@ Requires **VS Code 1.106+**, **Python 3.12+**, Git, and **verdog-cli 0.1.2+**.
 
 *An agent proposes the next integer, Python verifies it, and a decreasing counter controls the loop.*
 
+After `verdog sync`, opening a trusted project or switching workflows selects
+that workflow's Python environment for editor analysis. This works with both the
+Python extension and its Python Environments companion.
+
 ## Why agentic workflows?
 
 Agents can produce plausible results while missing the objective. Make verification

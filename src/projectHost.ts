@@ -294,6 +294,20 @@ interface PythonExtension {
   };
 }
 
+interface PythonEnvironment {
+  readonly envId: {readonly id: string; readonly managerId: string};
+}
+
+interface PythonEnvironmentsExtension {
+  resolveEnvironment(
+    resource: vscode.Uri,
+  ): Promise<PythonEnvironment | undefined>;
+  setEnvironment(
+    resource: vscode.Uri,
+    environment: PythonEnvironment,
+  ): Promise<void>;
+}
+
 /** Point editor analysis at the isolated environment of the active workflow. */
 export async function selectWorkflowEnvironment(
   host: OpenHost,
@@ -304,20 +318,19 @@ export async function selectWorkflowEnvironment(
   }
   const owner = locate(host, workflow.ownerGraph).root;
   const select = async () => {
-    let environment: string;
+    let interpreter: string;
     try {
-      environment = await directProjectPath(
+      const environment = await directProjectPath(
         owner,
         `.verdog/environments/${workflow.id}`,
       );
+      interpreter = path.join(
+        environment,
+        process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+      );
       await Promise.all([
         fs.access(path.join(environment, '.verdog-environment.json')),
-        fs.access(
-          path.join(
-            environment,
-            process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
-          ),
-        ),
+        fs.access(interpreter),
       ]);
     } catch (error) {
       host.output.appendLine(
@@ -334,10 +347,34 @@ export async function selectWorkflowEnvironment(
       const python = extension.isActive
         ? extension.exports
         : await extension.activate();
-      await python.environments.updateActiveEnvironmentPath(
-        environment,
-        vscode.Uri.file(host.root),
-      );
+      const resource = vscode.Uri.file(host.root);
+      const environments = vscode.workspace
+        .getConfiguration('python')
+        .get<boolean>('useEnvironmentsExtension', false)
+        ? vscode.extensions.getExtension<PythonEnvironmentsExtension>(
+            'ms-python.vscode-python-envs',
+          )
+        : undefined;
+      if (environments !== undefined) {
+        // The Python API's path setter only updates the older interpreter store.
+        const api = environments.isActive
+          ? environments.exports
+          : await environments.activate();
+        const resolved = await api.resolveEnvironment(
+          vscode.Uri.file(interpreter),
+        );
+        if (resolved === undefined) {
+          throw new Error(
+            `Python Environments could not resolve ${interpreter}`,
+          );
+        }
+        await api.setEnvironment(resource, resolved);
+      } else {
+        await python.environments.updateActiveEnvironmentPath(
+          interpreter,
+          resource,
+        );
+      }
     } catch (error) {
       host.output.appendLine(
         `selecting workflow ${workflow.id} editor environment failed: ${String(error)}`,

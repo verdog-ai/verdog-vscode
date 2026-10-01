@@ -134,6 +134,7 @@ function host(current?: ProjectSnapshot): OpenHost {
     canvasReady: false,
     navigationRevision: 0,
     refreshRevision: 0,
+    workflowEnvironmentSelection: Promise.resolve(),
     root: '/test/project',
     snapshot: current,
     output: {appendLine() {}, show() {}},
@@ -1514,6 +1515,204 @@ test('host navigation shares history dispatch, prunes branches, and acknowledges
     kind: 'navigate',
     direction: 'forward',
   });
+});
+
+test('workflow selection uses the enabled environment API or the legacy fallback', async () => {
+  for (const {active, enabled, companion} of [
+    {active: false, enabled: true, companion: true},
+    {active: true, enabled: true, companion: true},
+    {active: true, enabled: false, companion: true},
+    {active: true, enabled: true, companion: false},
+  ]) {
+    const state = host(snapshot('graph'));
+    state.snapshot!.pinned = {
+      'local.tools': testProject() as unknown as ProjectSnapshot['project'],
+    };
+    const interpreter = path.join(
+      state.root,
+      'external/local/tools/.verdog/environments/main',
+      process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+    );
+    const resolved = {envId: {id: 'opaque-id', managerId: 'test-manager'}};
+    const calls: unknown[][] = [];
+    const errors: string[] = [];
+    Object.assign(state.output, {
+      appendLine: (line: string) => errors.push(line),
+    });
+    const python = {
+      environments: {
+        updateActiveEnvironmentPath: async (
+          file: string,
+          resource: unknown,
+        ) => {
+          calls.push(['legacy', file, resource]);
+        },
+      },
+    };
+    const environments = {
+      resolveEnvironment: async (resource: {fsPath: string}) => {
+        calls.push(['resolve', resource.fsPath]);
+        return resolved;
+      },
+      setEnvironment: async (resource: unknown, environment: unknown) => {
+        assert.equal(environment, resolved, 'pass the opaque resolved object');
+        calls.push(['select', resource]);
+      },
+    };
+    const {selectWorkflowEnvironment} = await load<
+      typeof import('./projectHost')
+    >('projectHost.ts', {
+      'node:fs': {
+        promises: {
+          access: async () => undefined,
+          lstat: async () => ({isSymbolicLink: () => false}),
+        },
+      },
+      vscode: {
+        Uri: {file: (fsPath: string) => ({fsPath})},
+        workspace: {
+          isTrusted: true,
+          getConfiguration: (section: string) => {
+            assert.equal(section, 'python');
+            return {
+              get: (key: string, fallback: boolean) => {
+                assert.equal(key, 'useEnvironmentsExtension');
+                assert.equal(fallback, false);
+                return enabled;
+              },
+            };
+          },
+        },
+        extensions: {
+          getExtension: (id: string) => {
+            calls.push(['extension', id]);
+            if (id === 'ms-python.vscode-python-envs' && !companion) {
+              return undefined;
+            }
+            const api = id === 'ms-python.python' ? python : environments;
+            return {
+              isActive: active,
+              exports: api,
+              activate: async () => {
+                calls.push(['activate', id]);
+                return api;
+              },
+            };
+          },
+        },
+      },
+    });
+    await selectWorkflowEnvironment(state, {
+      id: graphId('main'),
+      ownerGraph: 'local.tools/main',
+      scope: 'local.tools/main',
+    });
+    assert.deepEqual(calls, [
+      ['extension', 'ms-python.python'],
+      ...(!active ? [['activate', 'ms-python.python']] : []),
+      ...(enabled ? [['extension', 'ms-python.vscode-python-envs']] : []),
+      ...(enabled && companion
+        ? [
+            ...(!active ? [['activate', 'ms-python.vscode-python-envs']] : []),
+            ['resolve', interpreter],
+            ['select', {fsPath: state.root}],
+          ]
+        : [['legacy', interpreter, {fsPath: state.root}]]),
+    ]);
+    assert.deepEqual(errors, []);
+  }
+});
+
+test('unresolved environments are logged without fallback and do not block queued selection', async () => {
+  const state = host();
+  const started = deferred<void>();
+  const release = deferred<void>();
+  const resolved = {envId: {id: 'opaque-id', managerId: 'test-manager'}};
+  const resolutions: string[] = [];
+  const selected: unknown[][] = [];
+  const errors: string[] = [];
+  let legacyCalls = 0;
+  Object.assign(state.output, {
+    appendLine: (line: string) => errors.push(line),
+  });
+  const {selectWorkflowEnvironment} = await load<
+    typeof import('./projectHost')
+  >('projectHost.ts', {
+    'node:fs': {
+      promises: {
+        access: async () => undefined,
+        lstat: async () => ({isSymbolicLink: () => false}),
+      },
+    },
+    vscode: {
+      Uri: {file: (fsPath: string) => ({fsPath})},
+      workspace: {
+        isTrusted: true,
+        getConfiguration: () => ({get: () => true}),
+      },
+      extensions: {
+        getExtension: (id: string) => ({
+          isActive: true,
+          exports:
+            id === 'ms-python.python'
+              ? {
+                  environments: {
+                    updateActiveEnvironmentPath: async () => {
+                      ++legacyCalls;
+                    },
+                  },
+                }
+              : {
+                  resolveEnvironment: async (resource: {fsPath: string}) => {
+                    resolutions.push(resource.fsPath);
+                    if (resolutions.length === 1) {
+                      started.resolve();
+                      await release.promise;
+                      return undefined;
+                    }
+                    return resolved;
+                  },
+                  setEnvironment: async (
+                    resource: unknown,
+                    environment: unknown,
+                  ) => {
+                    assert.equal(environment, resolved);
+                    selected.push([resource, environment]);
+                  },
+                },
+        }),
+      },
+    },
+  });
+  const first = selectWorkflowEnvironment(state, {
+    id: graphId('first'),
+    ownerGraph: 'main',
+    scope: 'main',
+  });
+  const second = selectWorkflowEnvironment(state, {
+    id: graphId('second'),
+    ownerGraph: 'main',
+    scope: 'main',
+  });
+  const interpreter = (id: string) =>
+    path.join(
+      state.root,
+      `.verdog/environments/${id}`,
+      process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+    );
+  await started.promise;
+  assert.deepEqual(resolutions, [interpreter('first')]);
+  release.resolve();
+  await Promise.all([first, second]);
+  assert.deepEqual(resolutions, [interpreter('first'), interpreter('second')]);
+  assert.deepEqual(selected, [[{fsPath: state.root}, resolved]]);
+  assert.equal(legacyCalls, 0);
+  assert.equal(errors.length, 1);
+  assert.ok(
+    errors[0].includes(
+      `Python Environments could not resolve ${interpreter('first')}`,
+    ),
+  );
 });
 
 test('trusted previews never analyze, select Python, check, sync, or run', async () => {
