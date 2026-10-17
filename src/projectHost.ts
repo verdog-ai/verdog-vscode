@@ -18,7 +18,7 @@ import {
   readClone,
   subroutineFile,
 } from './clone';
-import {graphHash} from './graph';
+import {graphHash, upgradeProject} from './graph';
 import type {GraphId} from '../model/identifiers';
 import {packageDirectory} from '../model/names';
 import type {Preview} from './preview';
@@ -70,6 +70,8 @@ export interface HostState {
     | undefined;
   readonly root: string | undefined;
   showingSubroutine: string | undefined;
+  /** The process boundary around the shown scope, which Run Workflow runs. */
+  showingWorkflow?: WorkflowContext;
   workflowEnvironmentSelection: Promise<void>;
   snapshot: ProjectSnapshot | undefined;
   termination?: TerminationAnalysis;
@@ -428,7 +430,11 @@ export async function editSubroutine(
     report?: string;
   };
   try {
-    before = JSON.parse(originalText) as mutate.Project;
+    // A v32 document is edited, and so saved, as v33.
+    before = upgradeProject(
+      JSON.parse(originalText) as mutate.Project,
+      at.root === host.root,
+    );
     const changed = await change(before, at.subroutine);
     if (changed === undefined) {
       return false;

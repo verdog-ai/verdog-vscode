@@ -14,7 +14,7 @@ import {
 
 import {entries, object} from './reading';
 
-export const SCHEMA_VERSION = 32 as const;
+export const SCHEMA_VERSION = 33 as const;
 
 export type CanonicalObject = Record<string, unknown>;
 
@@ -208,8 +208,10 @@ export type CanonicalProject = CanonicalObject & {
   generated_from: string;
   package: string;
   schema_version: typeof SCHEMA_VERSION;
-  subroutine: SubroutineDefinition;
-  workflow: LocalWorkflowDefinition;
+  /** Root subroutines, visible from every scope. */
+  subroutines: SubroutineDefinition[];
+  /** Root workflows, each wrapping a root subroutine. */
+  workflows: LocalWorkflowDefinition[];
 };
 
 export interface Definition {
@@ -243,8 +245,6 @@ export interface DefinitionIndex {
   subroutines: ReadonlyMap<GraphId, SubroutineDefinition>;
   /** Enclosing graph, keyed by a declaration or graph id. */
   parents: ReadonlyMap<GraphId, GraphId | undefined>;
-  rootSubroutine?: GraphId;
-  rootWorkflow?: GraphId;
 }
 
 function graph(value: unknown): SubroutineDefinition | undefined {
@@ -283,12 +283,12 @@ export function graphLeaf(id: GraphId): GraphId {
     : graphId(id.slice(separator + GRAPH_SEPARATOR.length));
 }
 
-/** A declaration's canonical identity within its lexical owner. */
+/** A declaration's canonical identity within its lexical owner; `''` is the project. */
 export function qualifyGraph(
   owner: GraphId | undefined,
   localId: GraphId,
 ): GraphId {
-  return owner === undefined
+  return owner === undefined || owner === ''
     ? localId
     : graphId(`${owner}${GRAPH_SEPARATOR}${localId}`);
 }
@@ -310,11 +310,6 @@ export function definitionIndex(project: unknown): DefinitionIndex {
   const duplicates = new Set<string>();
   const subroutines = new Map<GraphId, SubroutineDefinition>();
   const parents = new Map<GraphId, GraphId | undefined>();
-  const rootWorkflow = localWorkflow(object(project).workflow);
-  const rootGraph = graph(object(project).subroutine);
-  if (rootWorkflow === undefined && rootGraph === undefined) {
-    return {definitions, duplicates, parents, subroutines};
-  }
 
   const localDefinitions: Array<{
     definition: Definition;
@@ -404,14 +399,19 @@ export function definitionIndex(project: unknown): DefinitionIndex {
     }
   };
 
-  if (rootWorkflow !== undefined) {
-    visitWorkflow(rootWorkflow, undefined, [
-      'workflows',
-      graphLeaf(rootWorkflow.subroutine),
-    ]);
+  // The project is the owner of its root declarations, exactly as a subroutine owns nested ones.
+  const root = object(project);
+  for (const raw of entries(root.workflows)) {
+    const localId = workflowId(raw);
+    if (localId !== undefined) {
+      visitWorkflow(raw, undefined, ['workflows', localId]);
+    }
   }
-  if (rootGraph !== undefined) {
-    visitGraph(rootGraph, undefined, ['subroutines', rootGraph.id]);
+  for (const raw of entries(root.subroutines)) {
+    const body = graph(raw);
+    if (body !== undefined) {
+      visitGraph(body, undefined, ['subroutines', body.id]);
+    }
   }
 
   for (const {definition, workflow} of localDefinitions) {
@@ -425,21 +425,26 @@ export function definitionIndex(project: unknown): DefinitionIndex {
     }
   }
 
-  return {
-    definitions,
-    duplicates,
-    parents,
-    subroutines,
-    ...(rootGraph === undefined ? {} : {rootSubroutine: rootGraph.id}),
-    ...(rootWorkflow === undefined
-      ? {}
-      : {
-          rootWorkflow: qualifyGraph(
-            undefined,
-            graphLeaf(rootWorkflow.subroutine),
-          ),
-        }),
-  };
+  return {definitions, duplicates, parents, subroutines};
+}
+
+/** The workflows the project itself declares. */
+export function rootWorkflows(index: DefinitionIndex): GraphId[] {
+  return [...index.definitions.values()]
+    .filter(
+      definition =>
+        definition.kind === 'workflow' && definition.declaredIn === undefined,
+    )
+    .map(definition => definition.id);
+}
+
+/**
+ * The workflow run when none is named, as the CLI chooses it: the only root workflow, else
+ * `main` when declared, else none.
+ */
+export function defaultWorkflow(index: DefinitionIndex): GraphId | undefined {
+  const roots = rootWorkflows(index);
+  return roots.length === 1 ? roots[0] : roots.find(id => id === 'main');
 }
 
 /** One definition from its kind-specific namespace. */
@@ -490,31 +495,13 @@ export function visibleDefinitions(
         (kind === undefined || definition.kind === kind),
     ),
   );
-  const roots = (
-    [
-      ['workflow', index.rootWorkflow],
-      ['subroutine', index.rootSubroutine],
-    ] as const
-  ).flatMap(([rootKind, id]) => {
-    const definition =
-      id === undefined
-        ? undefined
-        : index.definitions.get(definitionKey(rootKind, id));
-    return definition === undefined ||
-      (kind !== undefined && definition.kind !== kind)
-      ? []
-      : [definition];
-  });
-  return [
-    ...visible,
-    ...roots.filter(
-      root =>
-        !visible.some(
-          ({id, kind: visibleKind}) =>
-            id === root.id && visibleKind === root.kind,
-        ),
-    ),
-  ];
+  // Root declarations belong to the project, which encloses every scope.
+  const roots = [...index.definitions.values()].filter(
+    definition =>
+      definition.declaredIn === undefined &&
+      (kind === undefined || definition.kind === kind),
+  );
+  return [...visible, ...roots];
 }
 
 /** Local definitions plus qualified external subroutines offered at one call site. */

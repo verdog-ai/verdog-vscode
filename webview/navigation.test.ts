@@ -43,7 +43,7 @@ function snapshot(
     editable: true,
     entity_documents: documents(),
     graph_hash: 'graph',
-    initial_scope: `workflow:${project.subroutine.id}`,
+    initial_scope: `workflow:${project.subroutines[0].id}`,
     pinned,
     project,
   };
@@ -55,12 +55,14 @@ function project(): CanonicalProject {
 
 test('direct call navigation refuses inaccessible and ambiguous definitions', () => {
   const root = project();
-  const child = root.subroutine.subroutines[0];
+  const child = root.subroutines[0].subroutines[0];
   const privateChild = structuredClone(child);
   privateChild.id = graphId('private');
   privateChild.subroutines = [];
   child.subroutines.push(privateChild);
-  const call = root.subroutine.nodes.find(({id}) => id === 'call_implement')!;
+  const call = root.subroutines[0].nodes.find(
+    ({id}) => id === 'call_implement',
+  )!;
   assert.equal(call.kind, 'subroutine_call');
   assert.ok(call.operation);
   call.operation.target = graphId('main__implement__private');
@@ -71,7 +73,7 @@ test('direct call navigation refuses inaccessible and ambiguous definitions', ()
   assert.equal(node.data.definition, undefined);
 
   call.operation.target = graphId('main__implement');
-  root.subroutine.subroutines.push(structuredClone(child));
+  root.subroutines[0].subroutines.push(structuredClone(child));
   current = snapshot(root);
   graph = snapshotCanvasGraphs(current).main!;
   node = graph.nodes.find(({id}) => id === call.id)!;
@@ -81,7 +83,7 @@ test('direct call navigation refuses inaccessible and ambiguous definitions', ()
 
 test('canvas history restores the workflow environment around nested workflows', () => {
   const root = project();
-  root.subroutine.workflows.push({
+  root.subroutines[0].workflows.push({
     subroutine: graphId('main__implement'),
     profiles: [],
     sessions: [],
@@ -269,7 +271,7 @@ test('definition navigation keeps root and pin duplicate identities distinct', (
   assert.deepEqual(local.removal, {
     entity: 'subroutines',
     id: 'main',
-    subroutine: 'main',
+    subroutine: '',
   });
   assert.deepEqual(localNested.removal, {
     entity: 'subroutines',
@@ -279,7 +281,7 @@ test('definition navigation keeps root and pin duplicate identities distinct', (
   assert.deepEqual(external.removal, {
     entity: 'subroutines',
     id: 'main',
-    subroutine: 'publisher.tool/main',
+    subroutine: 'publisher.tool/',
   });
   assert.deepEqual(externalNested.removal, {
     entity: 'subroutines',
@@ -353,14 +355,14 @@ test('same-id subroutine and workflow definitions list only their matching calle
     ...(root.sources as unknown[]),
     {path: rootWorkflowDeclaration},
   ];
-  root.subroutine.workflows.push({
+  root.subroutines[0].workflows.push({
     subroutine: graphId('main__implement'),
     profiles: [],
     sessions: [],
     profile_arguments: {},
     session_arguments: {},
   });
-  root.subroutine.nodes.push({
+  root.subroutines[0].nodes.push({
     id: 'run_implement',
     kind: 'workflow_call',
     name: 'Run implement',
@@ -401,9 +403,9 @@ test('same-id subroutine and workflow definitions list only their matching calle
   assert.equal(workflow.target?.scope, 'workflow:main__implement');
   assert.equal(rootWorkflow.target?.scope, 'workflow:main');
   assert.deepEqual(rootWorkflow.removal, {
-    entity: 'subroutines',
+    entity: 'workflows',
     id: 'main',
-    subroutine: 'main',
+    subroutine: '',
   });
   assert.deepEqual(
     subroutine.children.map(entry => ({
@@ -514,12 +516,12 @@ test('same-id subroutine and workflow definitions list only their matching calle
 test('qualified subroutine calls and external workflow calls keep their definition owner', () => {
   const root = project();
   root.externals = [{alias: 'publisher.tool'}];
-  root.subroutine.workflows.push({
+  root.subroutines[0].workflows.push({
     external: {alias: 'publisher.tool', workflow: graphId('main')},
     id: graphId('borrowed'),
     name: 'Borrowed',
   });
-  root.subroutine.nodes.push(
+  root.subroutines[0].nodes.push(
     {
       id: 'call_pinned',
       kind: 'subroutine_call',
@@ -611,9 +613,9 @@ test('qualified subroutine calls and external workflow calls keep their definiti
     subroutine: 'main',
   });
   assert.deepEqual(pinnedWorkflow.removal, {
-    entity: 'subroutines',
+    entity: 'workflows',
     id: 'main',
-    subroutine: 'publisher.tool/main',
+    subroutine: 'publisher.tool/',
   });
   assert.equal(
     pinnedWorkflow.children.some(({id}) => id === 'run_borrowed'),
@@ -629,7 +631,7 @@ test('bindings are not declarations and an unavailable nested target falls back 
     {path: 'src/demo/project/workflows/main/bindings/__init__.py'},
     {path: ownerDeclaration},
   ];
-  root.subroutine.workflows.push({
+  root.subroutines[0].workflows.push({
     external: {alias: 'missing.tool', workflow: graphId('main')},
     id: graphId('borrowed'),
     name: 'Borrowed',
@@ -789,7 +791,7 @@ test('read-only navigation offers no deletion actions', () => {
 
 test('partially authored references degrade to empty instead of throwing', () => {
   const current = snapshot(project());
-  const graph = current.project.subroutine as unknown as Record<
+  const graph = current.project.subroutines[0] as unknown as Record<
     string,
     unknown
   >;
@@ -813,24 +815,24 @@ test('partially authored references degrade to empty instead of throwing', () =>
 
 test('workflow navigation keeps its wrapper context and explicit boundary resources', () => {
   const root = project();
-  root.subroutine.profile_parameters = [
+  root.subroutines[0].profile_parameters = [
     {id: 'generator', name: 'Generator'},
     {id: 'reviewer', name: 'Reviewer'},
   ];
-  root.subroutine.session_parameters = [
+  root.subroutines[0].session_parameters = [
     {id: 'conversation', name: 'Conversation'},
     {id: 'scratch', name: 'Scratch'},
   ];
-  root.workflow.profile_arguments = {
+  root.workflows[0].profile_arguments = {
     generator: 'builder',
     reviewer: 'builder',
   };
-  root.workflow.session_arguments = {
+  root.workflows[0].session_arguments = {
     conversation: 'history',
     scratch: 'temporary',
   };
-  root.workflow.profiles = [testProfile('builder', 'Builder')];
-  root.workflow.sessions = [
+  root.workflows[0].profiles = [testProfile('builder', 'Builder')];
+  root.workflows[0].sessions = [
     {id: 'history', name: 'History', persistent: true},
     {id: 'temporary', name: 'Temporary', persistent: false},
   ];
@@ -1006,18 +1008,18 @@ test('workflow navigation keeps its wrapper context and explicit boundary resour
 
 test('a subroutine definition lists every directly owned entity', () => {
   const root = project();
-  root.subroutine.profile_parameters = [{id: 'agent', name: 'Agent'}];
-  root.subroutine.session_parameters = [
+  root.subroutines[0].profile_parameters = [{id: 'agent', name: 'Agent'}];
+  root.subroutines[0].session_parameters = [
     {id: 'conversation', name: 'Conversation'},
   ];
-  root.subroutine.workflows.push({
+  root.subroutines[0].workflows.push({
     profile_arguments: {},
     profiles: [],
     session_arguments: {},
     sessions: [],
     subroutine: graphId('main__implement'),
   });
-  const child = root.subroutine.subroutines[0];
+  const child = root.subroutines[0].subroutines[0];
   assert.ok(child);
   const grandchild = structuredClone(child);
   grandchild.id = graphId('deeper');
@@ -1091,7 +1093,9 @@ test('a subroutine definition lists every directly owned entity', () => {
 
 test("a profile referrer focuses its agent node and opens that node's declaration", () => {
   const root = project();
-  const call = root.subroutine.nodes.find(({id}) => id === 'call_implement');
+  const call = root.subroutines[0].nodes.find(
+    ({id}) => id === 'call_implement',
+  );
   assert.equal(call?.kind, 'subroutine_call');
   if (call?.kind !== 'subroutine_call') {
     return;
@@ -1128,8 +1132,8 @@ test("a profile referrer focuses its agent node and opens that node's declaratio
 
 test('resource parameters are labeled as parameters', () => {
   const root = project();
-  root.subroutine.profile_parameters = [{id: 'agent', name: 'Agent'}];
-  root.subroutine.session_parameters = [
+  root.subroutines[0].profile_parameters = [{id: 'agent', name: 'Agent'}];
+  root.subroutines[0].session_parameters = [
     {id: 'conversation', name: 'Conversation'},
   ];
 
@@ -1149,16 +1153,20 @@ test('resource parameters are labeled as parameters', () => {
 
 test('a parameter links to every workflow and subroutine call that binds it', () => {
   const root = project();
-  const child = root.subroutine.subroutines.find(({id}) => id === 'implement');
+  const child = root.subroutines[0].subroutines.find(
+    ({id}) => id === 'implement',
+  );
   assert.ok(child);
   child.profile_parameters = [{id: 'agent', name: 'Agent'}];
-  const call = root.subroutine.nodes.find(({id}) => id === 'call_implement');
+  const call = root.subroutines[0].nodes.find(
+    ({id}) => id === 'call_implement',
+  );
   assert.equal(call?.kind, 'subroutine_call');
   if (call?.kind !== 'subroutine_call') {
     return;
   }
   call.operation.profile_arguments = {agent: 'default'};
-  root.subroutine.workflows.push({
+  root.subroutines[0].workflows.push({
     profile_arguments: {agent: 'builder'},
     profiles: [testProfile('builder', 'Builder')],
     session_arguments: {},
@@ -1245,7 +1253,7 @@ test('a removed non-canvas identity opens properties in its owning graph', () =>
 
 test('a removed workflow resource opens its workflow declaration and properties', () => {
   const root = project();
-  root.subroutine.workflows.push({
+  root.subroutines[0].workflows.push({
     profile_arguments: {},
     profiles: [testProfile('builder', 'Builder')],
     session_arguments: {},
@@ -1291,7 +1299,7 @@ test('editable pinned workflow resources keep their deletion action', () => {
   const root = project();
   const pinned = project();
   pinned.package = 'publisher.tool';
-  pinned.workflow.profiles = [testProfile('builder', 'Builder')];
+  pinned.workflows[0].profiles = [testProfile('builder', 'Builder')];
   const current = snapshot(root, {'publisher.tool': pinned});
 
   const profile = navigationPage(

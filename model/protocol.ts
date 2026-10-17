@@ -310,7 +310,6 @@ export interface HostToRemovalReview {
     hasAuthoredCode: boolean;
     impacts: RemovalImpact[];
     orphaned: string[];
-    reset: boolean;
     subject: {entity: Entity; id: string; label: string};
   };
 }

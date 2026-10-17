@@ -129,7 +129,6 @@ function Imports({aliases}: {aliases: string[]}) {
 }
 
 function Review({host, review}: {host: Host; review: Review}) {
-  const verb = review.reset ? 'Reset' : 'Delete';
   const indexes = useMemo(
     () => new Map(review.impacts.map((impact, index) => [impact, index])),
     [review.impacts],
@@ -151,7 +150,7 @@ function Review({host, review}: {host: Host; review: Review}) {
     <div className="identity-page">
       <header>
         <h1>
-          {verb} {review.subject.label} <code>{review.subject.id}</code>?
+          Delete {review.subject.label} <code>{review.subject.id}</code>?
         </h1>
         <p className="summary">
           {deleted} {deleted === 1 ? 'identity' : 'identities'} will be deleted
@@ -186,9 +185,6 @@ function Review({host, review}: {host: Host; review: Review}) {
           {review.hasAuthoredCode
             ? 'Authored code owned by these identities will move to Trash. '
             : ''}
-          {review.reset
-            ? 'The required ports and pass-through route will be regenerated. '
-            : ''}
           Generated files are omitted and will be regenerated.
           {review.orphaned.length === 0
             ? undefined
@@ -207,9 +203,7 @@ function Review({host, review}: {host: Host; review: Review}) {
             onClick={() => host.postMessage({kind: 'delete'})}
             type="button"
           >
-            {review.reset
-              ? `Reset to empty ${review.subject.id}`
-              : `Delete ${deleted} ${deleted === 1 ? 'identity' : 'identities'}`}
+            {`Delete ${deleted} ${deleted === 1 ? 'identity' : 'identities'}`}
           </button>
         </div>
       </footer>

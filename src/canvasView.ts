@@ -618,6 +618,7 @@ class CanvasView implements vscode.WebviewViewProvider {
           return;
         case 'shown':
           this.host.showingSubroutine = message.subroutine;
+          this.host.showingWorkflow = message.workflow;
           if (message.workflow !== undefined && hasProject(this.host)) {
             await selectWorkflowEnvironment(this.host, message.workflow);
           }

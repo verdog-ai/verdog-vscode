@@ -278,8 +278,7 @@ function definitionDetails(
   return {
     fields,
     idEditable:
-      !root &&
-      (definition.kind === 'subroutine' || definition.external !== undefined),
+      definition.kind === 'subroutine' || definition.external !== undefined,
     kind: `${definitionKind} definition`,
     name: definition.name,
     nameEditable:

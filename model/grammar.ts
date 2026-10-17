@@ -96,8 +96,7 @@ export function contextAt(text: string, offset: number): CompletionContext {
       ? current
       : undefined;
   const root = parseTree(text);
-  const bodyPaths: JSONPath[] =
-    path[0] === 'subroutine' ? [['subroutine']] : [];
+  const bodyPaths: JSONPath[] = [];
   for (let index = 0; index < path.length - 1; index += 1) {
     if (path[index] === 'subroutines' && typeof path[index + 1] === 'number') {
       bodyPaths.push(path.slice(0, index + 2));

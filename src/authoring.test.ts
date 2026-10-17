@@ -61,7 +61,7 @@ test("the cursor's collection and subroutine come out of a real project", () => 
 test('a half-typed document still locates, because that is when help is wanted', () => {
   const text = `{
   "package": "space.demo",
-  "subroutine":
+  "subroutines": [
     { "id": "implement", "features": [], "nodes": [], "edges": [
       { "id": "a_b", "conditions": [ { "feature_id": "remaining", "observation": "`;
   const context = contextAt(text, text.length);
@@ -77,7 +77,7 @@ test('a half-typed document still locates, because that is when help is wanted',
 
 test('an entity property is not an array-item insertion point', () => {
   const text = `{
-  "subroutine": { "id": "main", "nodes": [{ "id": "`;
+  "subroutines": [{ "id": "main", "nodes": [{ "id": "`;
   const context = contextAt(text, text.length);
   assert.equal(context.collection, 'nodes');
   assert.equal(context.insertion, false);
@@ -85,7 +85,7 @@ test('an entity property is not an array-item insertion point', () => {
 });
 
 test('a new array slot is an insertion point, but a started object is not', () => {
-  const prefix = `{ "subroutine": { "id": "main", "nodes": [`;
+  const prefix = `{ "subroutines": [{ "id": "main", "nodes": [`;
   assert.equal(contextAt(prefix, prefix.length).insertion, true);
   assert.equal(contextAt(`${prefix}{},`, prefix.length + 3).insertion, true);
   assert.equal(contextAt(`${prefix}{`, prefix.length + 1).insertion, false);
@@ -94,7 +94,7 @@ test('a new array slot is an insertion point, but a started object is not', () =
 test('JSON string escapes are not mistaken for structure', () => {
   const name = JSON.stringify('Use {braces}, "quotes", and end with \\');
   const text = `{
-  "subroutine":
+  "subroutines": [
     { "id": "main", "nodes": [
       { "id": "step", "name": ${name}, "kind": "python", "operation": {} },
       `;
@@ -153,7 +153,7 @@ test('subroutine targets include every subroutine in a direct pin', () => {
 
 test('an incomplete document keeps feature order, labels and subroutine scope', () => {
   const text = `{
-  "subroutine":
+  "subroutines": [
     { "id": "first", "features": [
       { "id": "wrong", "label": "Wrong", "kind": "boolean" }
     ], "subroutines": [
@@ -174,7 +174,7 @@ test('an incomplete document keeps feature order, labels and subroutine scope', 
 
 test('an observation value may start on another line', () => {
   const text = `{
-  "subroutine": { "id": "main", "edges": [{ "conditions": [{
+  "subroutines": [{ "id": "main", "edges": [{ "conditions": [{
     "feature_id": "ready",
     "observation":
       "`;
@@ -186,7 +186,7 @@ test('an observation value may start on another line', () => {
 
 test("an enum value completes from the feature's declared domain", () => {
   const text = `{
-  "subroutine": { "id": "main", "features": [{
+  "subroutines": [{ "id": "main", "features": [{
     "id": "status", "label": "Status", "kind": "enum",
     "values": ["pending", "done"]
   }], "edges": [{ "conditions": [{

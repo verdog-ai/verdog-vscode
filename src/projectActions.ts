@@ -35,6 +35,7 @@ import {featuresIn} from '../model/grammar';
 import {
   agentProfileId,
   agentSessionId,
+  graphId,
   type GraphId,
 } from '../model/identifiers';
 import {entityLabel, identifierProblem} from '../model/names';
@@ -42,7 +43,9 @@ import {
   CALL_DEFINITION_KIND,
   CALL_NODE_KINDS,
   callTargets,
+  defaultWorkflow,
   definitionIndex,
+  rootWorkflows,
   definitionKey,
   DEFINITION_KIND,
   DEFINITION_KINDS,
@@ -144,6 +147,14 @@ async function createEntity(
     host.navigationRevision !== navigationRevision ||
     host.snapshot === undefined
   ) {
+    return;
+  }
+  if (subroutine === '') {
+    // A root definition has no enclosing canvas, so open the definition itself.
+    await followNavigationTarget(host, {
+      scope:
+        entity === 'workflows' ? definitionKey('workflow', graphId(id)) : id,
+    });
     return;
   }
   const snapshot = host.snapshot;
@@ -354,13 +365,32 @@ async function callArguments(
   };
 }
 
+/** Where a new definition goes: the project root, or one of its subroutines. */
+async function chooseDefinitionOwner(
+  host: OpenHost,
+): Promise<string | undefined> {
+  const owners = subroutineIds(host);
+  if (owners.length === 0) {
+    return '';
+  }
+  return (
+    await vscode.window.showQuickPick(
+      [
+        {label: 'Project root', owner: ''},
+        ...owners.map(owner => ({label: owner, owner})),
+      ],
+      {title: 'Declare it where?'},
+    )
+  )?.owner;
+}
+
 async function addDefinitionHere(
   host: OpenHost,
   parentId?: string,
   given?: {kind?: string; name?: string; target?: string},
 ): Promise<void> {
   const navigationRevision = host.navigationRevision;
-  const parent = parentId ?? (await chooseSubroutine(host));
+  const parent = parentId ?? (await chooseDefinitionOwner(host));
   if (parent === undefined) {
     return;
   }
@@ -1023,10 +1053,9 @@ async function confirmRemoval(
   id: string,
   removal: ReturnType<typeof mutate.remove>,
 ): Promise<boolean> {
-  const verb = removal.reset === true ? 'Reset' : 'Delete';
   const panel = vscode.window.createWebviewPanel(
     'verdog.removalReview',
-    `${verb} ${entityLabel(entity)} ${id}`,
+    `Delete ${entityLabel(entity)} ${id}`,
     {preserveFocus: false, viewColumn: vscode.ViewColumn.Active},
     {
       enableFindWidget: true,
@@ -1042,7 +1071,6 @@ async function confirmRemoval(
       hasAuthoredCode: removal.code.length > 0,
       impacts: removal.impacts,
       orphaned: removal.orphaned,
-      reset: removal.reset === true,
       subject: {entity, id, label: entityLabel(entity)},
     },
   };
@@ -1209,15 +1237,13 @@ async function removeEntity(
     return;
   }
   removalInProgress = true;
-  const location = locate(host, subroutine);
-  const root = location.root;
-  const resettingRoot = entity === 'subroutines' && id === location.subroutine;
+  const root = locate(host, subroutine).root;
   try {
     let removal: {orphaned: string[]} = {orphaned: []};
     const edited = await editSubroutine(
       host,
       subroutine,
-      `${resettingRoot ? 'Reset' : 'Deleted'} ${entityLabel(entity)} ${id}`,
+      `Deleted ${entityLabel(entity)} ${id}`,
       async (project, at) => {
         const result = mutate.remove(project, at, entity, id, workflow);
         if (!(await confirmRemoval(host, subroutine, entity, id, result))) {
@@ -1242,6 +1268,28 @@ async function removeEntity(
   } finally {
     removalInProgress = false;
   }
+}
+
+/** The shown workflow, else the CLI's default, else the author's choice of a root one. */
+async function chooseWorkflowToRun(
+  host: OpenHost,
+  root: string,
+): Promise<string | undefined> {
+  const shown = host.showingWorkflow;
+  if (shown !== undefined && locate(host, shown.ownerGraph).root === root) {
+    return shown.id;
+  }
+  const index = definitionIndex(projectOf(host, host.showingSubroutine ?? ''));
+  const chosen = defaultWorkflow(index);
+  if (chosen !== undefined) {
+    return chosen;
+  }
+  const roots = rootWorkflows(index);
+  if (roots.length === 0) {
+    void vscode.window.showInformationMessage('No root workflow');
+    return undefined;
+  }
+  return vscode.window.showQuickPick(roots, {title: 'Which workflow?'});
 }
 
 async function deleteViaPalette(host: OpenHost): Promise<void> {
@@ -1342,7 +1390,11 @@ export async function handleCanvasAction(
       await addCallHere(host, message.subroutine);
       return;
     case 'add-definition':
-      await addDefinitionHere(host, message.subroutine);
+      await addDefinitionHere(
+        host,
+        message.subroutine,
+        message.subroutine === '' ? {kind: 'subroutine'} : undefined,
+      );
       return;
     case 'add-node':
       await addNodeHere(host, message.subroutine);
@@ -1528,15 +1580,16 @@ export function registerProjectCommands(host: OpenHost): vscode.Disposable[] {
         'check',
       ),
     ),
-    vscode.commands.registerCommand('verdog.run', () =>
-      runVerb(
-        host,
+    vscode.commands.registerCommand('verdog.run', async () => {
+      const root =
         host.showingSubroutine === undefined
           ? host.root
-          : locate(host, host.showingSubroutine).root,
-        'run',
-      ),
-    ),
+          : locate(host, host.showingSubroutine).root;
+      const workflow = await chooseWorkflowToRun(host, root);
+      if (workflow !== undefined) {
+        await runVerb(host, root, 'run', [workflow]);
+      }
+    }),
     vscode.commands.registerCommand(
       'verdog.addNode',
       (given?: {

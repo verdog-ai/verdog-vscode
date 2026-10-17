@@ -6,19 +6,22 @@
     "schema_version",
     "package",
     "generated_from",
-    "workflow",
-    "subroutine",
+    "workflows",
     "externals",
     "sources",
     "editor",
-    "extensions"
+    "extensions",
+    "subroutines"
   ],
   "properties": {
-    "schema_version": { "const": 32 },
+    "schema_version": { "const": 33 },
     "package": { "$ref": "#/$defs/package_key" },
     "generated_from": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-    "workflow": { "$ref": "#/$defs/local_workflow_definition" },
-    "subroutine": { "$ref": "#/$defs/subroutine_definition" },
+    "workflows": {
+      "type": "array",
+      "description": "Root workflows, each wrapping a root subroutine.",
+      "items": { "$ref": "#/$defs/local_workflow_definition" }
+    },
     "externals": {
       "type": "array",
       "items": { "$ref": "#/$defs/external" }
@@ -39,7 +42,12 @@
       },
       "additionalProperties": false
     },
-    "extensions": { "type": "object" }
+    "extensions": { "type": "object" },
+    "subroutines": {
+      "type": "array",
+      "description": "Root subroutines, visible from every scope.",
+      "items": { "$ref": "#/$defs/subroutine_definition" }
+    }
   },
   "additionalProperties": false,
   "$defs": {

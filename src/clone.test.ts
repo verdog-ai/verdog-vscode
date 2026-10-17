@@ -24,7 +24,9 @@ import {
   subroutineFile,
 } from './clone';
 import {parseVerdict} from './cli';
-import {testProfile} from './fixtures';
+import {testProfile, testProject} from './fixtures';
+import {graphHash, legacyGraphHash} from './graph';
+import {isStale} from '../model/snapshot';
 import {definitionTarget, navigationPage} from '../webview/navigation';
 import {entityPropertyPage} from '../webview/propertyData';
 import {nodeResourceFields} from '../model/resources';
@@ -127,6 +129,119 @@ test('an old clone reports its schema as unsupported', async context => {
   );
 });
 
+/** The shared fixture as the v32 document an older compiler wrote. */
+function legacyProject(): Record<string, unknown> {
+  const {subroutines, workflows, ...rest} = testProject() as {
+    subroutines: unknown[];
+    workflows: unknown[];
+  } & Record<string, unknown>;
+  const legacy: Record<string, unknown> = {
+    ...rest,
+    schema_version: 32,
+    subroutine: subroutines[0],
+    workflow: workflows[0],
+  };
+  legacy.generated_from = legacyGraphHash(legacy);
+  return legacy;
+}
+
+test('a fresh v32 clone reads as a fresh v33 clone, and its pins are lifted', async context => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'verdog-vscode-v32-'));
+  context.after(() => fs.rm(root, {force: true, recursive: true}));
+  const pin: Record<string, unknown> = {
+    ...legacyProject(),
+    package: 'publisher.tools',
+  };
+  pin.generated_from = '1'.repeat(64);
+  await fs.mkdir(path.join(root, 'external', 'publisher', 'tools'), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(root, 'external', 'publisher', 'tools', 'project.json'),
+    JSON.stringify(pin),
+  );
+  await fs.writeFile(
+    path.join(root, 'project.json'),
+    JSON.stringify({
+      ...legacyProject(),
+      externals: [{alias: 'publisher.tools', package: 'publisher.tools'}],
+    }),
+  );
+
+  const snapshot = await readClone(root);
+  assert.equal(snapshot.project.schema_version, SCHEMA_VERSION);
+  assert.deepEqual(
+    snapshot.project.subroutines.map(({id}) => id),
+    ['main'],
+  );
+  assert.equal(snapshot.project.workflows[0]?.subroutine, 'main');
+  assert.equal('subroutine' in snapshot.project, false);
+  assert.equal(snapshot.initial_scope, 'workflow:main');
+  const pinned = snapshot.pinned['publisher.tools'];
+  assert.equal(pinned?.generated_from, '1'.repeat(64));
+  assert.deepEqual(
+    pinned?.subroutines.map(({id}) => id),
+    ['main'],
+  );
+  assert.ok(subroutineIn(snapshot, 'publisher.tools/main'));
+
+  const fresh = legacyProject();
+  await fs.writeFile(path.join(root, 'project.json'), JSON.stringify(fresh));
+  const own = await readClone(root);
+  assert.equal(own.project.generated_from, own.graph_hash);
+  assert.equal(own.graph_hash, graphHash(own.project));
+  assert.equal(isStale(own), false);
+
+  await fs.writeFile(
+    path.join(root, 'project.json'),
+    JSON.stringify({...fresh, generated_from: '2'.repeat(64)}),
+  );
+  const stale = await readClone(root);
+  assert.equal(stale.project.generated_from, '2'.repeat(64));
+  assert.equal(isStale(stale), true);
+});
+
+test('the initial scope is the default workflow, else a root subroutine, else none', async context => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'verdog-vscode-roots-'));
+  context.after(() => fs.rm(root, {force: true, recursive: true}));
+  const base = testProject();
+  const [main] = base.subroutines as SubroutineDefinition[];
+  const wrap = (subroutine: string) => ({
+    subroutine,
+    profiles: [],
+    sessions: [],
+    profile_arguments: {},
+    session_arguments: {},
+  });
+  const scope = async (project: Record<string, unknown>) => {
+    await fs.writeFile(
+      path.join(root, 'project.json'),
+      JSON.stringify(project),
+    );
+    return (await readClone(root)).initial_scope;
+  };
+  const alpha = {...main, id: 'alpha', subroutines: [], nodes: [], edges: []};
+  const beta = {...alpha, id: 'beta'};
+
+  assert.equal(await scope({...base, subroutines: [], workflows: []}), '');
+  assert.equal(
+    await scope({
+      ...base,
+      subroutines: [alpha, beta],
+      workflows: [wrap('alpha'), wrap('beta')],
+    }),
+    'alpha',
+  );
+  assert.equal(
+    await scope({
+      ...base,
+      subroutines: [alpha, beta],
+      workflows: [wrap('beta')],
+    }),
+    'workflow:beta',
+  );
+});
+
 test('partial graph edits still expose the available identities', async context => {
   const root = await fs.mkdtemp(path.join(tmpdir(), 'verdog-vscode-partial-'));
   context.after(() => fs.rm(root, {force: true, recursive: true}));
@@ -146,7 +261,7 @@ test('partial graph edits still expose the available identities', async context 
       JSON.stringify({
         schema_version: SCHEMA_VERSION,
         package: 'demo',
-        subroutine,
+        subroutines: [subroutine],
       }),
     );
     const snapshot = await readClone(root);
@@ -272,14 +387,16 @@ test('entity documents follow their lexical source paths', async context => {
         {path: `${workflowBase}/profiles/runtime/__init__.py`},
         {path: `${workflowBase}/sessions/runtime/__init__.py`},
       ],
-      subroutine,
-      workflow: {
-        subroutine: 'main',
-        profiles: [testProfile('runtime', 'Runtime')],
-        sessions: [{id: 'runtime', name: 'Runtime', persistent: true}],
-        profile_arguments: {},
-        session_arguments: {},
-      },
+      subroutines: [subroutine],
+      workflows: [
+        {
+          subroutine: 'main',
+          profiles: [testProfile('runtime', 'Runtime')],
+          sessions: [{id: 'runtime', name: 'Runtime', persistent: true}],
+          profile_arguments: {},
+          session_arguments: {},
+        },
+      ],
     }),
   );
 
@@ -423,26 +540,30 @@ test("a pinned dependency's workflows are drawable, namespaced, and owner-qualif
       'local.tools': {
         editor: {layouts: {}},
         package: 'publisher.tools',
-        subroutine: subroutine('main_body'),
-        workflow: {
+        subroutines: [subroutine('main_body')],
+        workflows: [
+          {
+            subroutine: 'main_body',
+            profiles: [],
+            sessions: [],
+            profile_arguments: {},
+            session_arguments: {},
+          },
+        ],
+      },
+    },
+    project: {
+      editor: {layouts: {}},
+      subroutines: [subroutine('main_body')],
+      workflows: [
+        {
           subroutine: 'main_body',
           profiles: [],
           sessions: [],
           profile_arguments: {},
           session_arguments: {},
         },
-      },
-    },
-    project: {
-      editor: {layouts: {}},
-      subroutine: subroutine('main_body'),
-      workflow: {
-        subroutine: 'main_body',
-        profiles: [],
-        sessions: [],
-        profile_arguments: {},
-        session_arguments: {},
-      },
+      ],
     },
   } as unknown as Parameters<typeof snapshotSubroutines>[0];
 
@@ -542,14 +663,16 @@ test("a clone follows each owner's direct aliases without flattening packages", 
       package: packageName,
       schema_version: SCHEMA_VERSION,
       sources,
-      subroutine: rootSubroutine,
-      workflow: {
-        subroutine: 'main_body',
-        profiles: [],
-        sessions: [],
-        profile_arguments: {},
-        session_arguments: {},
-      },
+      subroutines: [rootSubroutine],
+      workflows: [
+        {
+          subroutine: 'main_body',
+          profiles: [],
+          sessions: [],
+          profile_arguments: {},
+          session_arguments: {},
+        },
+      ],
     };
   };
   const call = (target: string, id: string) => ({
@@ -792,27 +915,31 @@ test('a clone does not follow an invalid alias outside its root', async context 
     package: 'owner.root',
     schema_version: SCHEMA_VERSION,
     sources: [],
-    subroutine: {
-      edges: [],
-      features: [],
-      id: 'main_body',
-      name: 'Main body',
-      nodes: [],
-      profile_parameters: [],
-      profiles: [],
-      session_parameters: [],
-      sessions: [],
-      ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
-      subroutines: [],
-      workflows: [],
-    },
-    workflow: {
-      subroutine: 'main_body',
-      profiles: [],
-      sessions: [],
-      profile_arguments: {},
-      session_arguments: {},
-    },
+    subroutines: [
+      {
+        edges: [],
+        features: [],
+        id: 'main_body',
+        name: 'Main body',
+        nodes: [],
+        profile_parameters: [],
+        profiles: [],
+        session_parameters: [],
+        sessions: [],
+        ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
+        subroutines: [],
+        workflows: [],
+      },
+    ],
+    workflows: [
+      {
+        subroutine: 'main_body',
+        profiles: [],
+        sessions: [],
+        profile_arguments: {},
+        session_arguments: {},
+      },
+    ],
   });
   await Promise.all([
     fs.writeFile(
@@ -852,27 +979,31 @@ test('a clone does not follow a symlinked external checkout', async context => {
     package: 'owner.root',
     schema_version: SCHEMA_VERSION,
     sources: [],
-    subroutine: {
-      edges: [],
-      features: [],
-      id: 'main_body',
-      name: 'Main body',
-      nodes: [],
-      profile_parameters: [],
-      profiles: [],
-      session_parameters: [],
-      sessions: [],
-      ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
-      subroutines: [],
-      workflows: [],
-    },
-    workflow: {
-      subroutine: 'main_body',
-      profiles: [],
-      sessions: [],
-      profile_arguments: {},
-      session_arguments: {},
-    },
+    subroutines: [
+      {
+        edges: [],
+        features: [],
+        id: 'main_body',
+        name: 'Main body',
+        nodes: [],
+        profile_parameters: [],
+        profiles: [],
+        session_parameters: [],
+        sessions: [],
+        ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
+        subroutines: [],
+        workflows: [],
+      },
+    ],
+    workflows: [
+      {
+        subroutine: 'main_body',
+        profiles: [],
+        sessions: [],
+        profile_arguments: {},
+        session_arguments: {},
+      },
+    ],
   });
   await Promise.all([
     fs.writeFile(
@@ -957,39 +1088,47 @@ test('a pinned workflow is read from the project that defines it', () => {
     pinned: {
       'local.tools': {
         package: 'publisher.tools',
-        subroutine: {
+        subroutines: [
+          {
+            id: 'main_body',
+            name: 'Theirs',
+            nodes: [],
+            edges: [],
+            workflows: [],
+            subroutines: [],
+          },
+        ],
+        workflows: [
+          {
+            subroutine: 'main_body',
+            profiles: [],
+            sessions: [],
+            profile_arguments: {},
+            session_arguments: {},
+          },
+        ],
+      },
+    },
+    project: {
+      subroutines: [
+        {
           id: 'main_body',
-          name: 'Theirs',
+          name: 'Ours',
           nodes: [],
           edges: [],
           workflows: [],
           subroutines: [],
         },
-        workflow: {
+      ],
+      workflows: [
+        {
           subroutine: 'main_body',
           profiles: [],
           sessions: [],
           profile_arguments: {},
           session_arguments: {},
         },
-      },
-    },
-    project: {
-      subroutine: {
-        id: 'main_body',
-        name: 'Ours',
-        nodes: [],
-        edges: [],
-        workflows: [],
-        subroutines: [],
-      },
-      workflow: {
-        subroutine: 'main_body',
-        profiles: [],
-        sessions: [],
-        profile_arguments: {},
-        session_arguments: {},
-      },
+      ],
     },
   } as unknown as Parameters<typeof subroutineIn>[0];
 

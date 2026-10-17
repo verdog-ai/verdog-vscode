@@ -67,20 +67,20 @@ function snapshotOf(
 test('external workflow aliases keep local identity without exposing target bindings', () => {
   const root = testProject() as unknown as CanonicalProject;
   root.externals = [{alias: 'publisher.tool'}];
-  root.subroutine.workflows.push({
+  root.subroutines[0].workflows.push({
     external: {alias: 'publisher.tool', workflow: graphId('main')},
     id: graphId('borrowed'),
     name: 'Borrowed',
   });
   const pinned = testProject() as unknown as CanonicalProject;
   pinned.package = 'publisher.tool';
-  pinned.subroutine.profile_parameters = [
+  pinned.subroutines[0].profile_parameters = [
     {id: agentProfileId('agent'), name: 'Agent'},
   ];
-  pinned.workflow.profile_arguments = {
+  pinned.workflows[0].profile_arguments = {
     [agentProfileId('agent')]: agentProfileId('builder'),
   };
-  pinned.workflow.profiles = [testProfile('builder', 'Builder')];
+  pinned.workflows[0].profiles = [testProfile('builder', 'Builder')];
   const snapshot = snapshotOf(root, {'publisher.tool': pinned});
   const page = entityPropertyPage(
     snapshot,
@@ -233,7 +233,7 @@ test('entity property pages use semantic titles', () => {
       nameWritable: page?.nameWritable,
     })),
     [
-      {idWritable: false, nameWritable: true},
+      {idWritable: true, nameWritable: true},
       {idWritable: false, nameWritable: false},
       {idWritable: false, nameWritable: true},
       {idWritable: true, nameWritable: true},
@@ -331,7 +331,7 @@ test('entity property pages preserve node documents and workflow-owned settings'
       name: 'Conversation',
     },
   ];
-  const workflow = value.workflow;
+  const workflow = value.workflows[0];
   workflow.profile_arguments = {
     [agentProfileId('agent')]: agentProfileId('builder'),
   };
@@ -729,7 +729,7 @@ test('resource updates are normalized against the same complete contract', () =>
 test('workflow boundaries use the same call fields with explicit resources', () => {
   const bound = structuredClone(project);
   const target = subroutineInProject(bound, 'main')!;
-  const workflow = bound.workflow as LocalWorkflowDefinition;
+  const workflow = (bound.workflows as LocalWorkflowDefinition[])[0];
   target.profile_parameters = [
     {id: 'generator', name: 'Generator'},
     {id: 'reviewer', name: 'Reviewer'},
@@ -896,7 +896,7 @@ test("an entity's properties come from the graph, and name is not id", () => {
 
   const rootSubroutine = entityDetails(project, 'main', 'subroutines', 'main')!;
   assert.equal(rootSubroutine.name, 'Main');
-  assert.equal(rootSubroutine.idEditable, false);
+  assert.equal(rootSubroutine.idEditable, true, 'a root renames like any');
   assert.equal(rootSubroutine.nameEditable, true);
   const rootWorkflow = entityDetails(project, 'main', 'workflows', 'main')!;
   assert.equal(rootWorkflow.idEditable, false);
@@ -984,40 +984,44 @@ test("an entity's properties come from the graph, and name is not id", () => {
   );
 
   const external = {
-    subroutine: {
-      edges: [],
-      features: [],
-      profile_parameters: [],
-      profiles: [],
-      session_parameters: [],
-      sessions: [],
-      id: 'main_body',
-      name: 'Main body',
-      ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
-      workflows: [
-        {
-          id: 'helper',
-          name: 'Helper',
-          external: {alias: 'helper_canary', workflow: 'main'},
-        },
-      ],
-      subroutines: [],
-      nodes: [
-        {
-          id: 'call_helper',
-          kind: 'workflow_call',
-          name: 'Call helper',
-          operation: {target: 'main_body__helper'},
-        },
-      ],
-    },
-    workflow: {
-      subroutine: 'main_body',
-      profiles: [],
-      sessions: [],
-      profile_arguments: {},
-      session_arguments: {},
-    },
+    subroutines: [
+      {
+        edges: [],
+        features: [],
+        profile_parameters: [],
+        profiles: [],
+        session_parameters: [],
+        sessions: [],
+        id: 'main_body',
+        name: 'Main body',
+        ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
+        workflows: [
+          {
+            id: 'helper',
+            name: 'Helper',
+            external: {alias: 'helper_canary', workflow: 'main'},
+          },
+        ],
+        subroutines: [],
+        nodes: [
+          {
+            id: 'call_helper',
+            kind: 'workflow_call',
+            name: 'Call helper',
+            operation: {target: 'main_body__helper'},
+          },
+        ],
+      },
+    ],
+    workflows: [
+      {
+        subroutine: 'main_body',
+        profiles: [],
+        sessions: [],
+        profile_arguments: {},
+        session_arguments: {},
+      },
+    ],
   };
   const pinned = entityDetails(external, 'main_body', 'nodes', 'call_helper')!;
   assert.deepEqual(pinned.fields, [
@@ -1036,50 +1040,54 @@ test("an entity's properties come from the graph, and name is not id", () => {
   );
 
   const local = {
-    subroutine: {
-      edges: [],
-      features: [],
-      profile_parameters: [],
-      profiles: [],
-      session_parameters: [],
-      sessions: [],
-      id: 'main',
-      name: 'Main',
-      nodes: [],
-      ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
-      subroutines: [
-        {
-          edges: [],
-          features: [],
-          profile_parameters: [],
-          profiles: [],
-          session_parameters: [],
-          sessions: [],
-          id: 'worker',
-          name: 'Worker prose',
-          nodes: [],
-          ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
-          subroutines: [],
-          workflows: [],
-        },
-      ],
-      workflows: [
-        {
-          subroutine: 'main__worker',
-          profiles: [],
-          sessions: [],
-          profile_arguments: {},
-          session_arguments: {},
-        },
-      ],
-    },
-    workflow: {
-      subroutine: 'main',
-      profiles: [],
-      sessions: [],
-      profile_arguments: {},
-      session_arguments: {},
-    },
+    subroutines: [
+      {
+        edges: [],
+        features: [],
+        profile_parameters: [],
+        profiles: [],
+        session_parameters: [],
+        sessions: [],
+        id: 'main',
+        name: 'Main',
+        nodes: [],
+        ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
+        subroutines: [
+          {
+            edges: [],
+            features: [],
+            profile_parameters: [],
+            profiles: [],
+            session_parameters: [],
+            sessions: [],
+            id: 'worker',
+            name: 'Worker prose',
+            nodes: [],
+            ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
+            subroutines: [],
+            workflows: [],
+          },
+        ],
+        workflows: [
+          {
+            subroutine: 'main__worker',
+            profiles: [],
+            sessions: [],
+            profile_arguments: {},
+            session_arguments: {},
+          },
+        ],
+      },
+    ],
+    workflows: [
+      {
+        subroutine: 'main',
+        profiles: [],
+        sessions: [],
+        profile_arguments: {},
+        session_arguments: {},
+      },
+    ],
   };
   const wrapper = entityDetails(local, 'main', 'workflows', 'main__worker')!;
   assert.equal(wrapper.name, 'Worker prose');
@@ -1114,7 +1122,7 @@ test('parameter pages resolve to the concrete resources bound through the call p
     session_arguments: {},
     target: graphId('main__implement'),
   };
-  const workflow = value.workflow;
+  const workflow = value.workflows[0];
   workflow.profile_arguments = {
     [agentProfileId('agent')]: agentProfileId('builder'),
   };

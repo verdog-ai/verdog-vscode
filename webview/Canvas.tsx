@@ -468,6 +468,23 @@ export function Canvas({host}: {host: CanvasHost}) {
       </p>
     );
   }
+  if (ids.length === 0) {
+    return (
+      <div className="notice">
+        <p>This project declares no subroutines yet.</p>
+        {snapshot.editable ? (
+          <button
+            onClick={() =>
+              host.postMessage({kind: 'add-definition', subroutine: ''})
+            }
+            type="button"
+          >
+            Add subroutine
+          </button>
+        ) : undefined}
+      </div>
+    );
+  }
 
   return (
     <div className="shell">

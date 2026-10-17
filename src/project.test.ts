@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 
 import {
+  defaultWorkflow,
   definitionIn,
   subroutinesIn,
   definitionIndex,
@@ -72,14 +73,18 @@ function project(): CanonicalProject {
     package: 'demo.project',
     schema_version: SCHEMA_VERSION,
     sources: [],
-    subroutine: root,
-    workflow: {
-      subroutine: 'main',
-      profiles: [],
-      sessions: [],
-      profile_arguments: {},
-      session_arguments: {},
-    },
+    subroutines: [root],
+    workflows: [rootWorkflow('main')],
+  };
+}
+
+function rootWorkflow(subroutine: string) {
+  return {
+    subroutine,
+    profiles: [],
+    sessions: [],
+    profile_arguments: {},
+    session_arguments: {},
   };
 }
 
@@ -122,7 +127,7 @@ test('the central index separates workflow envelopes from subroutine graphs', ()
 
 test('the index records ambiguity without replacing the first declaration', () => {
   const value = project();
-  const root = value.subroutine;
+  const root = value.subroutines[0];
   const first = root.subroutines.find(({id}) => id === 'normalize')!;
   root.subroutines.push(graph('normalize'));
   const index = definitionIndex(value);
@@ -189,4 +194,47 @@ test('source paths follow the lexical graph tree', () => {
     definitionPath(value, 'subroutine', 'main__worker__nested'),
     ['subroutines', 'main', 'subroutines', 'worker', 'subroutines', 'nested'],
   );
+});
+
+test('root siblings see each other, but not what the other nests', () => {
+  const value = project();
+  const helper = graph('helper');
+  helper.subroutines.push(graph('inner'));
+  value.subroutines.push(helper);
+  value.workflows.push(rootWorkflow('helper'));
+  const fromMain = visibleDefinitions(value, 'main').map(
+    ({id, kind}) => `${kind}:${id}`,
+  );
+  assert.ok(fromMain.includes('subroutine:helper'));
+  assert.ok(fromMain.includes('workflow:helper'));
+  assert.ok(!fromMain.includes('subroutine:helper__inner'));
+  const fromInner = visibleDefinitions(value, 'helper__inner').map(
+    ({id, kind}) => `${kind}:${id}`,
+  );
+  assert.ok(fromInner.includes('subroutine:main'));
+  assert.ok(!fromInner.includes('subroutine:main__worker'));
+  assert.deepEqual(definitionPath(value, 'workflow', 'helper'), [
+    'workflows',
+    'helper',
+  ]);
+  assert.deepEqual(
+    visibleDefinitions(value, '', 'subroutine').map(({id}) => id),
+    ['main', 'helper'],
+  );
+});
+
+test('the default workflow is the only root one, else main, else none', () => {
+  const value = project();
+  assert.equal(defaultWorkflow(definitionIndex(value)), 'main');
+  value.subroutines.push(graph('alpha'), graph('beta'));
+  value.workflows.push(rootWorkflow('alpha'));
+  assert.equal(defaultWorkflow(definitionIndex(value)), 'main');
+  value.workflows = [rootWorkflow('alpha')];
+  assert.equal(defaultWorkflow(definitionIndex(value)), 'alpha');
+  value.workflows.push(rootWorkflow('beta'));
+  assert.equal(defaultWorkflow(definitionIndex(value)), undefined);
+  value.workflows = [];
+  assert.equal(defaultWorkflow(definitionIndex(value)), undefined);
+  value.subroutines = [];
+  assert.equal(definitionIndex(value).definitions.size, 0);
 });

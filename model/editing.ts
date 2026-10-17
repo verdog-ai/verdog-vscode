@@ -100,8 +100,7 @@ export type RemovalReason =
   | 'calls_deleted_target'
   | 'wraps_deleted_subroutine'
   | 'uses_deleted_resource'
-  | 'reference_removed'
-  | 'reset';
+  | 'reference_removed';
 
 export interface RemovalImpact {
   effect: 'delete' | 'update';
@@ -119,7 +118,6 @@ export interface RemovalPlan {
   impacts: RemovalImpact[];
   orphaned: string[];
   project: Project;
-  reset?: true;
 }
 
 export type EntityIdentifier<Kind extends Entity> = Kind extends 'edges'
@@ -238,11 +236,15 @@ function isDerivedEdgeId(id: EdgeId, source: NodeId, target: NodeId): boolean {
   return /^(?:[2-9]|[1-9][0-9]+)$/.test(id.slice(base.length + 2));
 }
 
+/** The graph owning one subroutine's contents; `''` is the project, owner of the roots. */
 function subroutineGraph(
   project: Project,
   subroutineId: GraphId,
   index?: DefinitionIndex,
 ): Record<string, unknown> {
+  if (subroutineId === '') {
+    return project;
+  }
   const found =
     index?.subroutines.get(subroutineId) ??
     subroutineInProject(project, subroutineId);
@@ -831,7 +833,7 @@ function removalScope(index: DefinitionIndex, owner: GraphId): GraphId[] {
   const result: GraphId[] = [];
   const seen = new Set<GraphId>();
   for (
-    let current: GraphId | undefined = owner;
+    let current: GraphId | undefined = owner || undefined;
     current !== undefined && !seen.has(current);
     current = index.parents.get(current)
   ) {
@@ -908,14 +910,12 @@ function removalPlan(
   project: Project,
   code: readonly string[],
   impacts: readonly RemovalImpact[],
-  reset = false,
 ): RemovalPlan {
   return {
     code: compactDeletedCode(code),
     impacts: mergeRemovalImpacts([...impacts]),
     orphaned: [],
     project,
-    ...(reset ? {reset: true as const} : {}),
   };
 }
 
@@ -1079,10 +1079,12 @@ function definitionsToRemove(
   );
   const outsideWrappers: Array<Definition & {declaredIn: GraphId}> = [];
   for (const definition of index.definitions.values()) {
-    if (definition.kind !== 'workflow' || definition.declaredIn === undefined) {
+    if (definition.kind !== 'workflow') {
       continue;
     }
-    if (removedSubroutines.has(definition.declaredIn)) {
+    // A root workflow is declared by the project, which no deletion removes.
+    const declaredIn = definition.declaredIn ?? graphId('');
+    if (removedSubroutines.has(declaredIn)) {
       removedWorkflows.add(definition.id);
       continue;
     }
@@ -1092,7 +1094,7 @@ function definitionsToRemove(
       removedSubroutines.has(definition.target);
     if (wrapsRemoved) {
       removedWorkflows.add(definition.id);
-      outsideWrappers.push({...definition, declaredIn: definition.declaredIn});
+      outsideWrappers.push({...definition, declaredIn});
     }
   }
 
@@ -1169,22 +1171,8 @@ function removedSubroutineContents(
   index: DefinitionIndex,
   definitionId: GraphId,
   removedSubroutines: ReadonlySet<GraphId>,
-  retainedAfterReset: ReadonlySet<string>,
-  resettingRoot: boolean,
 ): RemovalImpact[] {
   const impacts: RemovalImpact[] = [];
-  if (resettingRoot && index.rootWorkflow !== undefined) {
-    impacts.push(
-      removalImpact(
-        index,
-        definitionId,
-        'update',
-        'workflows',
-        index.rootWorkflow,
-        'reset',
-      ),
-    );
-  }
   for (const definition of index.definitions.values()) {
     if (
       definition.kind === 'subroutine' &&
@@ -1230,17 +1218,14 @@ function removedSubroutineContents(
     }
     for (const entity of CONTAINED_ENTITIES) {
       for (const item of entries(body[entity])) {
-        const retained =
-          owner === definitionId &&
-          retainedAfterReset.has(`${entity}:${String(item.id)}`);
         impacts.push(
           removalImpact(
             index,
             owner,
-            retained ? 'update' : 'delete',
+            'delete',
             entity,
             String(item.id),
-            retained ? 'reset' : 'contained',
+            'contained',
           ),
         );
       }
@@ -1267,34 +1252,14 @@ function removeDefinition(
   const selected = index.definitions.get(
     definitionKey(definitionKind, definitionId),
   );
-  const resettingRoot =
-    definitionKind === 'subroutine' &&
-    definitionId === index.rootSubroutine &&
-    subroutineId === definitionId;
-  if (
-    selected === undefined ||
-    (!resettingRoot && selected.declaredIn !== subroutineId)
-  ) {
+  if (selected === undefined || (selected.declaredIn ?? '') !== subroutineId) {
     throw new Error(`no ${kind.slice(0, -1)} ${id} in ${subroutineId}`);
   }
-  const replacement = resettingRoot
-    ? emptySubroutine(selected.localId, selected.name)
-    : undefined;
-  const retainedAfterReset = new Set([
-    ...(replacement?.nodes ?? []).map(node => `nodes:${node.id}`),
-    ...(replacement?.edges ?? []).map(edge => `edges:${edge.id}`),
-  ]);
-  if (resettingRoot) {
-    impacts[0].effect = 'update';
-    impacts[0].reasons.push('reset');
-  }
-  const found = resettingRoot
-    ? graph
-    : entries(graph[kind]).find(definition =>
-        definitionKind === 'workflow'
-          ? workflowId(definition) === selected.localId
-          : definition.id === selected.localId,
-      );
+  const found = entries(graph[kind]).find(definition =>
+    definitionKind === 'workflow'
+      ? workflowId(definition) === selected.localId
+      : definition.id === selected.localId,
+  );
   if (found === undefined) {
     throw new Error(`no ${kind.slice(0, -1)} ${id} in ${subroutineId}`);
   }
@@ -1306,9 +1271,6 @@ function removeDefinition(
   const workflowsLosingResources = new Set(
     [...removedWorkflows].filter(id => !outsideWorkflowIds.has(id)),
   );
-  if (resettingRoot && index.rootWorkflow !== undefined) {
-    workflowsLosingResources.add(index.rootWorkflow);
-  }
   impacts.push(
     ...removedWorkflowResources(
       index,
@@ -1319,13 +1281,7 @@ function removeDefinition(
 
   if (definitionKind === 'subroutine') {
     impacts.push(
-      ...removedSubroutineContents(
-        index,
-        definitionId,
-        removedSubroutines,
-        retainedAfterReset,
-        resettingRoot,
-      ),
+      ...removedSubroutineContents(index, definitionId, removedSubroutines),
     );
   }
 
@@ -1370,49 +1326,28 @@ function removeDefinition(
     definitionId,
     index,
   );
-  const rootWorkflowDirectory =
-    resettingRoot && index.rootWorkflow !== undefined
-      ? definitionCode(projectAfter, 'workflow', index.rootWorkflow, index)
-      : undefined;
-  const rootWorkflowImplementation =
-    rootWorkflowDirectory === undefined
-      ? undefined
-      : `${rootWorkflowDirectory}/impl.py`;
   if (directory !== undefined) {
     code.push(directory);
   }
-  if (rootWorkflowImplementation !== undefined) {
-    code.push(rootWorkflowImplementation);
-  }
-  if (replacement !== undefined) {
-    projectAfter.subroutine = replacement;
-    const rootWorkflow = projectAfter.workflow as LocalWorkflowDefinition;
-    rootWorkflow.profiles = [];
-    rootWorkflow.sessions = [];
-    rootWorkflow.profile_arguments = {};
-    rootWorkflow.session_arguments = {};
-  } else {
-    const graphAfter = subroutineGraph(projectAfter, subroutineId, index);
-    graphAfter[kind] = entries(graphAfter[kind]).filter(definition =>
-      definitionKind === 'workflow'
-        ? workflowId(definition) !== selected.localId
-        : definition.id !== selected.localId,
-    );
-  }
+  const graphAfter = subroutineGraph(projectAfter, subroutineId, index);
+  graphAfter[kind] = entries(graphAfter[kind]).filter(definition =>
+    definitionKind === 'workflow'
+      ? workflowId(definition) !== selected.localId
+      : definition.id !== selected.localId,
+  );
   const layouts = object(object(projectAfter.editor).layouts);
-  const parentLayout = object(layouts[subroutineId]);
-  delete parentLayout[definitionKey(definitionKind, definitionId)];
-  layouts[subroutineId] = parentLayout;
+  if (subroutineId !== '') {
+    const parentLayout = object(layouts[subroutineId]);
+    delete parentLayout[definitionKey(definitionKind, definitionId)];
+    layouts[subroutineId] = parentLayout;
+  }
   for (const nestedId of removedSubroutines) {
     delete layouts[nestedId];
   }
   if (directory !== undefined) {
     withoutDirectory(projectAfter, directory);
   }
-  if (rootWorkflowImplementation !== undefined) {
-    withoutPath(projectAfter, rootWorkflowImplementation);
-  }
-  return removalPlan(projectAfter, code, impacts, resettingRoot);
+  return removalPlan(projectAfter, code, impacts);
 }
 
 function removeAgentResource(
@@ -2053,21 +1988,18 @@ export function setName(
       'a local workflow derives its id and name from its subroutine',
     );
   }
-  const rootSubroutine =
-    kind === 'subroutines' &&
-    definition?.declaredIn === undefined &&
-    definition?.id === subroutineId
-      ? definition.subroutine
-      : undefined;
-  const found =
-    rootSubroutine ??
-    entries(subroutineGraph(next, subroutineId)[kind]).find(item =>
-      kind === 'workflows'
-        ? definition !== undefined && workflowId(item) === definition.localId
-        : kind === 'subroutines'
-          ? item.id === definition?.localId
-          : item.id === id,
-    );
+  // The project declares a root, whichever graph the caller is showing it from.
+  const owner =
+    definition !== undefined && definition.declaredIn === undefined
+      ? ''
+      : subroutineId;
+  const found = entries(subroutineGraph(next, owner)[kind]).find(item =>
+    kind === 'workflows'
+      ? definition !== undefined && workflowId(item) === definition.localId
+      : kind === 'subroutines'
+        ? item.id === definition?.localId
+        : item.id === id,
+  );
   if (found === undefined) {
     throw new Error(`no ${kind.slice(0, -1)} ${id} in ${subroutineId}`);
   }

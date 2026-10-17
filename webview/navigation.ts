@@ -115,16 +115,18 @@ function graphScope(snapshot: ProjectSnapshot, key: string): string[] {
   return [owner, ...ancestry];
 }
 
+function rootOwnerPath(item: DefinitionItem): string | undefined {
+  const suffix = `/${definitionKey(item.kind, item.id)}`;
+  return item.key.endsWith(suffix)
+    ? item.key.slice(0, -suffix.length)
+    : undefined;
+}
+
 function definitionRootScope(
   snapshot: ProjectSnapshot,
   item: DefinitionItem,
 ): string[] {
-  const localKey = definitionKey(item.kind, item.id);
-  const suffix = `/${localKey}`;
-  const ownerPath = item.key.endsWith(suffix)
-    ? item.key.slice(0, -suffix.length)
-    : undefined;
-  return [ownerFolder(ownerPath, snapshot.project.package)];
+  return [ownerFolder(rootOwnerPath(item), snapshot.project.package)];
 }
 
 function callDefinitionKey(
@@ -311,8 +313,9 @@ function definitionEntry(
       : undefined;
   const declaration =
     declarationOf(item.documents) ?? declarationOf(declaring?.documents ?? []);
-  const removalSubroutine = item.declaredIn ?? item.target;
-  const rootReset = item.declaredIn === undefined;
+  // A root declaration belongs to its project, addressed as the owner path's empty graph.
+  const removalSubroutine =
+    item.declaredIn ?? qualifiedKey(rootOwnerPath(item), '');
   const target = definitionNavigationTarget(item);
   return {
     children: callers.get(item.key) ?? [],
@@ -330,13 +333,11 @@ function definitionEntry(
     ],
     ...(!ambiguous && removalSubroutine !== undefined && snapshot.editable
       ? {
-          removal: rootReset
-            ? inspection('subroutines', item.id, removalSubroutine)
-            : inspection(
-                DEFINITION_COLLECTION[item.kind],
-                item.id,
-                removalSubroutine,
-              ),
+          removal: inspection(
+            DEFINITION_COLLECTION[item.kind],
+            item.id,
+            removalSubroutine,
+          ),
         }
       : {}),
     scope:

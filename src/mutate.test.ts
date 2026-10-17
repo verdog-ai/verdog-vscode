@@ -1068,6 +1068,41 @@ test('a drag lands in editor.layouts, rounded', () => {
   assert.deepEqual(layouts.profile, {x: 12, y: -8});
 });
 
+test('the schema accepts v33 root lists and rejects the v32 shape', () => {
+  const current = load();
+  assert.equal(
+    validateProject(current),
+    true,
+    JSON.stringify(validateProject.errors),
+  );
+  assert.equal(
+    validateProject({...current, subroutines: [], workflows: []}),
+    true,
+    'a project may declare no roots',
+  );
+  const {subroutines, workflows, ...rest} = current as {
+    subroutines: unknown[];
+    workflows: unknown[];
+  } & Project;
+  assert.equal(
+    validateProject({
+      ...rest,
+      subroutine: subroutines[0],
+      workflow: workflows[0],
+    }),
+    false,
+  );
+  assert.equal(
+    validateProject({
+      ...rest,
+      schema_version: 32,
+      subroutine: subroutines[0],
+      workflow: workflows[0],
+    }),
+    false,
+  );
+});
+
 test('every edit satisfies the project schema', () => {
   let project = load();
   project = addNode(project, SUBROUTINE, 'feature', 'Measure', {
@@ -1103,7 +1138,9 @@ test('every edit satisfies the project schema', () => {
   );
 
   const oldDependencies = structuredClone(project) as Project;
-  (oldDependencies.workflow as Record<string, unknown>).dependencies = [];
+  (
+    oldDependencies.workflows as Array<Record<string, unknown>>
+  )[0].dependencies = [];
   assert.equal(
     validateProject(oldDependencies),
     false,
@@ -1247,7 +1284,7 @@ test('every edit leaves a graph the canvas can still draw', () => {
 
   const graph = workflows[SUBROUTINE];
   assert.ok(graph, 'the workflow still renders');
-  assert.equal(project.workflow !== undefined, true);
+  assert.equal(project.workflows !== undefined, true);
   const drawn = graph.nodes.map(node => node.id);
   assert.ok(drawn.includes('measure'), 'the new node is on the canvas');
   assert.equal(
@@ -2011,7 +2048,7 @@ function sourcePaths(project: Project): string[] {
   );
 }
 
-test('deleting the root subroutine replaces it with an empty main', () => {
+test('deleting the root main removes it and the workflow wrapping it', () => {
   const workflowProfile = addWorkflowProfile(load(), SUBROUTINE, 'Runner');
   const workflowSession = addWorkflowSession(
     workflowProfile.project,
@@ -2027,54 +2064,24 @@ test('deleting the root subroutine replaces it with an empty main', () => {
     sha256: '2'.repeat(64),
     size: 0,
   });
-  const originalWorkflow = structuredClone(before.workflow);
-  const removal = remove(before, SUBROUTINE, 'subroutines', SUBROUTINE);
-  const root = subroutineOf(removal.project);
-
-  assert.equal(root.id, SUBROUTINE);
-  assert.equal(root.name, subroutineOf(before).name);
-  assert.deepEqual(ids(root.nodes), ['enter', 'exit', 'failure']);
-  assert.deepEqual(root.edges, [
-    {
-      conditions: [],
-      effects: [],
-      id: 'enter__exit',
-      name: 'Pass through',
-      source: 'enter',
-      target: 'exit',
-    },
-  ]);
-  for (const collection of [
-    'features',
-    'profile_parameters',
-    'profiles',
-    'session_parameters',
-    'sessions',
-    'subroutines',
-    'workflows',
-  ]) {
-    assert.deepEqual(root[collection], []);
-  }
-  assert.deepEqual(removal.project.workflow, {
-    ...(originalWorkflow as Record<string, unknown>),
-    profile_arguments: {},
-    profiles: [],
-    session_arguments: {},
-    sessions: [],
-  });
-  assert.equal(removal.reset, true);
-  assert.deepEqual(removal.code, [
-    'src/demo/project/subroutines/main',
-    workflowImplementation,
-  ]);
-  assert.equal(
-    sourcePaths(removal.project).some(path =>
-      path.startsWith('src/demo/project/subroutines/main/'),
-    ),
-    false,
+  assert.throws(
+    () => remove(before, SUBROUTINE, 'subroutines', SUBROUTINE),
+    /no subroutine main in main/,
   );
+  const removal = remove(before, '', 'subroutines', SUBROUTINE);
+
+  assert.deepEqual(removal.project.subroutines, []);
+  assert.deepEqual(removal.project.workflows, []);
+  assert.deepEqual(removal.code, [
+    'src/demo/project/workflows/main',
+    'src/demo/project/subroutines/main',
+  ]);
   assert.equal(
-    sourcePaths(removal.project).includes(workflowImplementation),
+    sourcePaths(removal.project).some(
+      path =>
+        path.startsWith('src/demo/project/subroutines/main/') ||
+        path.startsWith('src/demo/project/workflows/main/'),
+    ),
     false,
   );
   assert.deepEqual(
@@ -2092,40 +2099,24 @@ test('deleting the root subroutine replaces it with an empty main', () => {
   );
   assert.equal(new Set(keys).size, keys.length);
   assert.ok(
+    removal.impacts.every(impact => impact.effect === 'delete'),
+    'nothing is reset',
+  );
+  assert.ok(
     removal.impacts.some(
       impact =>
-        impact.effect === 'update' &&
         impact.entity === 'subroutines' &&
         impact.id === SUBROUTINE &&
-        impact.reasons.includes('selected') &&
-        impact.reasons.includes('reset'),
+        impact.scope.length === 0 &&
+        impact.reasons.includes('selected'),
     ),
   );
   assert.ok(
     removal.impacts.some(
       impact =>
-        impact.entity === 'subroutines' &&
-        impact.id === 'main__implement' &&
-        impact.reasons.includes('contained'),
-    ),
-  );
-  assert.ok(
-    removal.impacts.some(
-      impact =>
-        impact.effect === 'update' &&
-        impact.entity === 'nodes' &&
-        impact.id === 'enter' &&
-        impact.scope.join('/') === SUBROUTINE &&
-        impact.reasons.includes('reset'),
-    ),
-  );
-  assert.ok(
-    removal.impacts.some(
-      impact =>
-        impact.effect === 'update' &&
         impact.entity === 'workflows' &&
         impact.id === SUBROUTINE &&
-        impact.reasons.includes('reset'),
+        impact.reasons.includes('wraps_deleted_subroutine'),
     ),
   );
   assert.deepEqual(
@@ -2135,8 +2126,8 @@ test('deleting the root subroutine replaces it with an empty main', () => {
         impact => `${impact.entity}:${impact.id}|${impact.reasons.join(',')}`,
       ),
     [
-      `profiles:${workflowProfile.id}|contained`,
-      `sessions:${workflowSession.id}|contained`,
+      `profiles:${workflowProfile.id}|wraps_deleted_subroutine`,
+      `sessions:${workflowSession.id}|wraps_deleted_subroutine`,
     ],
   );
   assert.ok(
@@ -2148,10 +2139,56 @@ test('deleting the root subroutine replaces it with an empty main', () => {
         impact.reasons.includes('contained'),
     ),
   );
-  assert.throws(
-    () => remove(before, SUBROUTINE, 'workflows', SUBROUTINE),
-    /no workflow main in main/,
+
+  const workflowOnly = remove(before, '', 'workflows', SUBROUTINE);
+  assert.deepEqual(workflowOnly.project.workflows, []);
+  assert.equal(
+    (workflowOnly.project.subroutines as unknown[]).length,
+    1,
+    'the wrapped subroutine stays',
   );
+});
+
+test('definitions are added and named at the project root', () => {
+  const added = addSubroutineDefinition(load(), 'Helper Loop', '');
+  assert.equal(added.id, 'helper_loop');
+  assert.deepEqual(
+    (added.project.subroutines as Array<Record<string, unknown>>).map(
+      ({id}) => id,
+    ),
+    ['main', 'helper_loop'],
+  );
+  const wrapped = addWorkflowDefinition(added.project, '', 'helper_loop');
+  assert.equal(wrapped.id, 'helper_loop');
+  assert.deepEqual(
+    (wrapped.project.workflows as Array<Record<string, unknown>>).map(
+      ({subroutine}) => subroutine,
+    ),
+    ['main', 'helper_loop'],
+  );
+  assert.equal(
+    validateProject(wrapped.project),
+    true,
+    JSON.stringify(validateProject.errors),
+  );
+  const named = setName(
+    wrapped.project,
+    '',
+    'subroutines',
+    'helper_loop',
+    'Helper',
+  );
+  assert.equal(subroutineOf(named, 'helper_loop').name, 'Helper');
+  const empty = remove(
+    remove(named, '', 'subroutines', 'helper_loop').project,
+    '',
+    'subroutines',
+    SUBROUTINE,
+  ).project;
+  assert.deepEqual(empty.subroutines, []);
+  assert.deepEqual(empty.workflows, []);
+  const fresh = addSubroutineDefinition(empty, 'main', '');
+  assert.equal(fresh.id, 'main');
 });
 
 test('deleting a node takes its manifest entries and names its directory', () => {
@@ -2299,7 +2336,9 @@ test('workflow boundaries own concrete profiles and sessions without binding the
     'Runtime',
     false,
   );
-  const workflow = session.project.workflow as Record<string, unknown>;
+  const workflow = (
+    session.project.workflows as Array<Record<string, unknown>>
+  )[0];
 
   assert.equal(profile.id, 'runtime');
   assert.equal(duplicate.id, 'runtime_2');
@@ -2331,7 +2370,9 @@ test('unbound workflow resources delete in their workflow scope and namespace', 
   const profile = addWorkflowProfile(load(), 'main', 'Shared');
   const session = addWorkflowSession(profile.project, 'main', 'Shared', false);
   const root = remove(session.project, 'main', 'profiles', profile.id, 'main');
-  const rootWorkflow = root.project.workflow as Record<string, unknown>;
+  const rootWorkflow = (
+    root.project.workflows as Array<Record<string, unknown>>
+  )[0];
 
   assert.deepEqual(root.code, [
     'src/demo/project/workflows/main/profiles/shared',
@@ -2384,7 +2425,9 @@ test('bound workflow resources must be rebound before deletion', () => {
   const graph = subroutineOf(session.project);
   graph.profile_parameters = [{id: 'agent', name: 'Agent'}];
   graph.session_parameters = [{id: 'conversation', name: 'Conversation'}];
-  const workflow = session.project.workflow as Record<string, unknown>;
+  const workflow = (
+    session.project.workflows as Array<Record<string, unknown>>
+  )[0];
   workflow.profile_arguments = {agent: profile.id};
   workflow.session_arguments = {conversation: session.id};
 
@@ -2466,7 +2509,7 @@ test('formal resources keep every targeting workflow envelope complete', () => {
     'Conversation',
     true,
   );
-  assert.deepEqual(rootSession.project.workflow, {
+  assert.deepEqual((rootSession.project.workflows as unknown[])[0], {
     profiles: [testProfile('generator', 'Generator')],
     sessions: [{id: 'conversation', name: 'Conversation', persistent: true}],
     profile_arguments: {generator: 'generator'},
@@ -2489,7 +2532,7 @@ test('formal resources keep every targeting workflow envelope complete', () => {
     'session_parameters',
     'conversation',
   );
-  assert.deepEqual(rootWithoutSession.project.workflow, {
+  assert.deepEqual((rootWithoutSession.project.workflows as unknown[])[0], {
     profiles: [testProfile('generator', 'Generator')],
     sessions: [{id: 'conversation', name: 'Conversation', persistent: true}],
     profile_arguments: {},
@@ -2513,24 +2556,25 @@ test('a new session parameter can reuse any existing boundary session', () => {
   const project = load();
   const graph = subroutineOf(project);
   graph.session_parameters = [{id: 'temporary', name: 'Temporary'}];
-  (project.workflow as Record<string, unknown>).session_arguments = {
+  (project.workflows as Array<Record<string, unknown>>)[0].session_arguments = {
     temporary: 'conversation',
   };
-  (project.workflow as Record<string, unknown>).sessions = [
+  (project.workflows as Array<Record<string, unknown>>)[0].sessions = [
     {id: 'conversation', name: 'Temporary', persistent: false},
   ];
 
   const added = addAgentSession(project, SUBROUTINE, 'Conversation', true);
   assert.equal(added.id, 'conversation');
   assert.deepEqual(
-    (added.project.workflow as Record<string, unknown>).session_arguments,
+    (added.project.workflows as Array<Record<string, unknown>>)[0]
+      .session_arguments,
     {
       temporary: 'conversation',
       conversation: 'conversation',
     },
   );
   assert.deepEqual(
-    (added.project.workflow as Record<string, unknown>).sessions,
+    (added.project.workflows as Array<Record<string, unknown>>)[0].sessions,
     [{id: 'conversation', name: 'Temporary', persistent: false}],
   );
 });
@@ -2602,13 +2646,15 @@ test('profile options and session persistence update subroutine and workflow own
   );
 
   const boundary = load();
-  boundary.workflow = {
-    subroutine: 'main',
-    profiles: [testProfile('runtime', 'Runtime')],
-    sessions: [{id: 'runtime', name: 'Runtime', persistent: false}],
-    profile_arguments: {},
-    session_arguments: {},
-  };
+  boundary.workflows = [
+    {
+      subroutine: 'main',
+      profiles: [testProfile('runtime', 'Runtime')],
+      sessions: [{id: 'runtime', name: 'Runtime', persistent: false}],
+      profile_arguments: {},
+      session_arguments: {},
+    },
+  ];
   const workflowProfile = setProfileConfiguration(
     boundary,
     SUBROUTINE,
@@ -2625,7 +2671,7 @@ test('profile options and session persistence update subroutine and workflow own
     'main',
   );
   assert.deepEqual(
-    (workflowSession.workflow as Record<string, unknown>).profiles,
+    (workflowSession.workflows as Array<Record<string, unknown>>)[0].profiles,
     [
       {
         ...testProfile('runtime', 'Runtime', 'claude'),
@@ -2634,7 +2680,7 @@ test('profile options and session persistence update subroutine and workflow own
     ],
   );
   assert.deepEqual(
-    (workflowSession.workflow as Record<string, unknown>).sessions,
+    (workflowSession.workflows as Array<Record<string, unknown>>)[0].sessions,
     [{id: 'runtime', name: 'Runtime', persistent: true}],
   );
 
@@ -2642,13 +2688,15 @@ test('profile options and session persistence update subroutine and workflow own
   subroutineOf(bound).session_parameters = [
     {id: 'conversation', name: 'Conversation'},
   ];
-  bound.workflow = {
-    subroutine: 'main',
-    profiles: [],
-    sessions: [{id: 'runtime', name: 'Runtime', persistent: false}],
-    profile_arguments: {},
-    session_arguments: {conversation: 'runtime'},
-  };
+  bound.workflows = [
+    {
+      subroutine: 'main',
+      profiles: [],
+      sessions: [{id: 'runtime', name: 'Runtime', persistent: false}],
+      profile_arguments: {},
+      session_arguments: {conversation: 'runtime'},
+    },
+  ];
   const rebound = setSessionPersistence(
     bound,
     SUBROUTINE,
@@ -2658,9 +2706,8 @@ test('profile options and session persistence update subroutine and workflow own
   );
   assert.equal(
     (
-      (rebound.workflow as Record<string, unknown>).sessions as Array<
-        Record<string, unknown>
-      >
+      (rebound.workflows as Array<Record<string, unknown>>)[0]
+        .sessions as Array<Record<string, unknown>>
     )[0]?.persistent,
     true,
   );
@@ -2865,7 +2912,7 @@ test('a name is prose, and changing it touches nothing else', () => {
 
   const rootNamed = setName(
     before,
-    SUBROUTINE,
+    '',
     'subroutines',
     SUBROUTINE,
     'Primary process',
@@ -2874,7 +2921,9 @@ test('a name is prose, and changing it touches nothing else', () => {
   assert.equal(subroutineOf(rootNamed).id, SUBROUTINE);
 
   const withBoundaryResources = structuredClone(before);
-  const boundary = withBoundaryResources.workflow as Record<string, unknown>;
+  const boundary = (
+    withBoundaryResources.workflows as Array<Record<string, unknown>>
+  )[0];
   boundary.profiles = [testProfile('builder', 'Builder')];
   boundary.sessions = [{id: 'history', name: 'History', persistent: true}];
   boundary.profile_arguments = {agent: 'builder'};
@@ -2895,7 +2944,9 @@ test('a name is prose, and changing it touches nothing else', () => {
     'Conversation history',
     SUBROUTINE,
   );
-  const renamedBoundary = sessionNamed.workflow as Record<string, unknown>;
+  const renamedBoundary = (
+    sessionNamed.workflows as Array<Record<string, unknown>>
+  )[0];
   assert.deepEqual(renamedBoundary.profiles, [
     {...testProfile('builder', 'Build changes')},
   ]);
@@ -2923,38 +2974,42 @@ test('aliases orphan independently when two pins name the same package', () => {
       {alias: 'channel.stable', package: 'publisher.tools'},
       {alias: 'channel.canary', package: 'publisher.tools'},
     ],
-    subroutine: {
-      edges: [],
-      features: [],
-      profile_parameters: [],
-      profiles: [],
-      session_parameters: [],
-      sessions: [],
-      id: 'main_body',
-      name: 'Main body',
-      nodes: [],
-      ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
-      subroutines: [],
-      workflows: [
-        {
-          id: 'stable_tools',
-          name: 'Stable',
-          external: {alias: 'channel.stable', workflow: 'main'},
-        },
-        {
-          id: 'canary_tools',
-          name: 'Canary',
-          external: {alias: 'channel.canary', workflow: 'main'},
-        },
-      ],
-    },
-    workflow: {
-      subroutine: 'main_body',
-      profiles: [],
-      sessions: [],
-      profile_arguments: {},
-      session_arguments: {},
-    },
+    subroutines: [
+      {
+        edges: [],
+        features: [],
+        profile_parameters: [],
+        profiles: [],
+        session_parameters: [],
+        sessions: [],
+        id: 'main_body',
+        name: 'Main body',
+        nodes: [],
+        ports: {enter: 'enter', exit: 'exit', failure: 'failure'},
+        subroutines: [],
+        workflows: [
+          {
+            id: 'stable_tools',
+            name: 'Stable',
+            external: {alias: 'channel.stable', workflow: 'main'},
+          },
+          {
+            id: 'canary_tools',
+            name: 'Canary',
+            external: {alias: 'channel.canary', workflow: 'main'},
+          },
+        ],
+      },
+    ],
+    workflows: [
+      {
+        subroutine: 'main_body',
+        profiles: [],
+        sessions: [],
+        profile_arguments: {},
+        session_arguments: {},
+      },
+    ],
   } as unknown as Project;
 
   assert.deepEqual(orphanedPins(project), []);

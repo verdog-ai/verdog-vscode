@@ -22,7 +22,7 @@ export interface DefinitionRef {
 export interface DefinitionItem {
   /** The authored identity occurs more than once, so navigation must not guess a target. */
   ambiguous?: true;
-  /** The graph that owns this definition. Deleting the root subroutine resets it. */
+  /** The graph that owns this definition; absent for a root, which the project owns. */
   declaredIn?: string;
   /** Generated and authored files owned by this definition. */
   documents: DocumentLink[];

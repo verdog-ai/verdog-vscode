@@ -56,8 +56,8 @@ is still visible in `metrics`.
 The largest imperative hotspot, `removeBecause`, mixed every deletion kind in
 one 181-statement function with complexity 113. It now dispatches to focused
 removal functions. Definition discovery, affected callers, and removal reporting
-are separate operations; root reset and file-removal behavior remain covered by
-the existing mutation tests. The largest extracted function has 64 statements
+are separate operations; file-removal behavior remains covered by the existing
+mutation tests. The largest extracted function has 64 statements
 and complexity 29.
 
 Authentication now separates stored-session validation from token exchange.

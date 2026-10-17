@@ -15,7 +15,7 @@
 import {promises as fs} from 'node:fs';
 import * as path from 'node:path';
 
-import {graphHash} from './graph';
+import {graphHash, upgradeProject} from './graph';
 import {array, entries, object, text} from '../model/reading';
 import {
   moduleDocumentPaths,
@@ -24,6 +24,7 @@ import {
 } from '../model/documents';
 import {packageDirectory, packageProblem} from '../model/names';
 import {
+  defaultWorkflow,
   definitionIndex,
   definitionKey,
   subroutinesIn,
@@ -137,7 +138,7 @@ function refs(
 
 export async function readClone(root: string): Promise<ProjectSnapshot> {
   const raw = await fs.readFile(path.join(root, 'project.json'), 'utf8');
-  const decoded = object(JSON.parse(raw) as unknown);
+  const decoded = upgradeProject(object(JSON.parse(raw) as unknown));
   // An old clone read by a new extension -- or the reverse -- is a real state rather than a
   // bug, and it deserves a sentence instead of a canvas quietly drawing the wrong thing. This
   // used to live in a `parseProjectSnapshot` nothing called, which is to say it did not live
@@ -331,8 +332,9 @@ export async function readClone(root: string): Promise<ProjectSnapshot> {
           `${prefix}project.json`,
         );
         const manifest = await fs.readFile(manifestPath, 'utf8');
-        const project = object(
-          JSON.parse(manifest) as unknown,
+        const project = upgradeProject(
+          object(JSON.parse(manifest) as unknown),
+          false,
         ) as CanonicalProject;
         pinned[aliasPath] = project;
         derive(project, prefix, subroutineId =>
@@ -345,7 +347,12 @@ export async function readClone(root: string): Promise<ProjectSnapshot> {
     }
   };
   await readPins(project);
-  const {rootSubroutine, rootWorkflow} = definitionIndex(project);
+  const index = definitionIndex(project);
+  const workflow = defaultWorkflow(index);
+  const firstRoot = [...index.definitions.values()].find(
+    definition =>
+      definition.kind === 'subroutine' && definition.declaredIn === undefined,
+  );
 
   return {
     // Locally you can do everything: there is no tenant to be a viewer of. The service
@@ -356,9 +363,9 @@ export async function readClone(root: string): Promise<ProjectSnapshot> {
     entity_documents: entityDocuments,
     graph_hash: graphHash(project),
     initial_scope:
-      rootWorkflow === undefined
-        ? (rootSubroutine ?? '')
-        : definitionKey('workflow', rootWorkflow),
+      workflow === undefined
+        ? (firstRoot?.id ?? '')
+        : definitionKey('workflow', workflow),
     pinned,
     project,
   };

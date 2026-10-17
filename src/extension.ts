@@ -10,7 +10,11 @@ import {readPreview} from './checkout';
 import {REVEAL_CANVAS, newProject} from './newProject';
 import {registerProjectCommands} from './projectActions';
 import {registerRunHistory} from './runHistoryView';
-import {definitionIndex, definitionKey} from '../model/project';
+import {
+  defaultWorkflow,
+  definitionIndex,
+  definitionKey,
+} from '../model/project';
 import {
   cliCommand,
   findClone,
@@ -95,15 +99,18 @@ export async function activate(
   }
 
   const snapshot = await refresh(host);
-  const rootWorkflow =
-    snapshot === undefined
+  const index =
+    snapshot === undefined ? undefined : definitionIndex(snapshot.project);
+  const workflow = index === undefined ? undefined : defaultWorkflow(index);
+  const target =
+    workflow === undefined
       ? undefined
-      : definitionIndex(snapshot.project).rootWorkflow;
-  if (snapshot !== undefined && rootWorkflow !== undefined) {
+      : index?.definitions.get(definitionKey('workflow', workflow))?.target;
+  if (workflow !== undefined && target !== undefined) {
     await selectWorkflowEnvironment(host, {
-      id: rootWorkflow,
-      ownerGraph: snapshot.project.subroutine.id,
-      scope: definitionKey('workflow', rootWorkflow),
+      id: workflow,
+      ownerGraph: target,
+      scope: definitionKey('workflow', workflow),
     });
   }
   context.subscriptions.push(
