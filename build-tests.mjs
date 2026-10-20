@@ -28,5 +28,5 @@ await build({
   // `vscode` exists only inside the editor. The pure half of `authoring` is what is tested,
   // so marking it external keeps the bundle honest: if a test reached the editor API, this
   // would fail to resolve at run time rather than pretending.
-  external: ['node:*', 'react', 'react-dom', 'vscode', 'esbuild'],
+  external: ['node:*', 'react', 'react-dom', 'vscode', 'esbuild', 'jsdom'],
 });

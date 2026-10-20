@@ -212,7 +212,16 @@ function decorateEdgeTermination(
   edge.append(badge);
 }
 
-function decorate(
+/** Graphviz's keyed join reads a datum from every child, so added elements leave first. */
+export function undecorate(container: HTMLElement): void {
+  container
+    .querySelectorAll(
+      '.graph-connect-handle, .graph-edge-hit, .graph-edge-source-handle, .graph-edge-status',
+    )
+    .forEach(interaction => interaction.remove());
+}
+
+export function decorate(
   container: HTMLElement,
   graph: SubroutineGraph | undefined,
   focused: CanvasSelection | undefined,
@@ -331,9 +340,11 @@ function decorateEdges(
       'aria-label',
       `${label} Enter to inspect.${highlighted ? ' Highlighted residual region.' : ''}`,
     );
-    const title = element.querySelector(':scope > title');
+    // Edit Graphviz's own text node in place. Replacing it (`textContent`) drops the d3 datum,
+    // and the next render's keyed join then throws on this edge and skips the rest of the graph.
+    const title = element.querySelector(':scope > title')?.firstChild ?? null;
     if (title !== null) {
-      title.textContent = `${label} ${badge.description}`;
+      title.nodeValue = `${label} ${badge.description}`;
     }
     element
       .querySelectorAll(
@@ -510,11 +521,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, CanvasProps>(
           return;
         }
         cancelGestureRef.current();
-        container
-          .querySelectorAll(
-            '.graph-connect-handle, .graph-edge-hit, .graph-edge-source-handle, .graph-edge-status',
-          )
-          .forEach(interaction => interaction.remove());
+        undecorate(container);
         const revision = ++revisionRef.current;
         renderingRef.current = revision;
         nodesRef.current = new Map(

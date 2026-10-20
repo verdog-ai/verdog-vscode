@@ -2,7 +2,7 @@
   "name": "verdog-vscode",
   "displayName": "Verdog",
   "description": "Author a Verdog project from the clone on disk: the workflow canvas, check and run.",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "private": true,
   "publisher": "verdog",
   "engines": {
@@ -300,6 +300,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/d3-selection": "^3.0.11",
+    "@types/jsdom": "^21.1.7",
     "@types/markdown-it": "^14.2.0",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -311,6 +312,7 @@
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.12.0",
+    "jsdom": "^26.1.0",
     "prettier": "^3.9.9",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.70.1"
