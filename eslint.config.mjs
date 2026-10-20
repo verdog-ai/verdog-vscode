@@ -1,3 +1,4 @@
+// Written by `verdog-standards sync` from verdog-ai/standards; edit it there.
 import js from '@eslint/js';
 import {defineConfig} from 'eslint/config';
 import globals from 'globals';
@@ -5,7 +6,7 @@ import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 
 export default defineConfig(
-  {ignores: ['dist*/**', 'node_modules/**']},
+  {ignores: ['dist*/**', 'node_modules/**', 'build/**']},
   js.configs.recommended,
   {
     files: ['**/*.mjs'],
@@ -16,7 +17,8 @@ export default defineConfig(
     extends: [tseslint.configs.recommended],
     languageOptions: {
       parserOptions: {
-        project: ['./tsconfig.host.json', './tsconfig.webview.json'],
+        // Every tsconfig of the package; the first that includes a file wins.
+        project: ['./tsconfig*.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
