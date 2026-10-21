@@ -8,3 +8,5 @@ on:
 jobs:
   standards:
     uses: verdog-ai/standards/.github/workflows/check.yml@main
+    with:
+      prepare: npm ci
