@@ -1,4 +1,4 @@
-# The extension's own checks and tests; plumbcheck only lints (standards.yml).
+# The extension's own checks and tests; peachycheck only lints (standards.yml).
 name: Tests
 
 on:
