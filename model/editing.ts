@@ -1897,6 +1897,10 @@ export function setProfileConfiguration(
     model: options.model?.trim() || null,
     reasoning_effort: options.reasoning_effort?.trim() || null,
     extra_args: [...options.extra_args],
+    // The compiler omits the option when false; so does the document.
+    ...(provider === 'codex' && options.danger_full_access === true
+      ? {danger_full_access: true as const}
+      : {}),
   };
   return next;
 }

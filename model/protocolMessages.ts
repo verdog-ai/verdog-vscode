@@ -88,7 +88,9 @@ function profile(value: unknown): boolean {
     (options.reasoning_effort === null ||
       typeof options.reasoning_effort === 'string') &&
     Array.isArray(options.extra_args) &&
-    options.extra_args.every(item => typeof item === 'string')
+    options.extra_args.every(item => typeof item === 'string') &&
+    (options.danger_full_access === undefined ||
+      (options.danger_full_access === true && value.provider === 'codex'))
   );
 }
 

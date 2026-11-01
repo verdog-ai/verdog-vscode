@@ -78,6 +78,9 @@ function concrete(
               extra_args: Array.isArray(options.extra_args)
                 ? options.extra_args.map(String)
                 : [],
+              ...(options.danger_full_access === true
+                ? {danger_full_access: true as const}
+                : {}),
             },
           },
         }
@@ -208,6 +211,7 @@ export function bindingSummary(binding: ResolvedBinding): string {
     provider,
     options.model ?? undefined,
     options.reasoning_effort ?? undefined,
+    options.danger_full_access ? 'no sandbox' : undefined,
   ].filter((item): item is string => item !== undefined);
   return `${where} (${settings.join(' · ')})`;
 }

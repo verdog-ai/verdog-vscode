@@ -2645,6 +2645,32 @@ test('profile options and session persistence update subroutine and workflow own
     },
   );
 
+  // Only codex keeps danger_full_access, and only when it is true.
+  for (const [provider, kept] of [
+    ['codex', true],
+    ['claude', false],
+  ] as const) {
+    const changed = setProfileConfiguration(
+      load(),
+      SUBROUTINE,
+      'default',
+      provider,
+      {...options, danger_full_access: true},
+    );
+    const profile = (
+      subroutineOf(changed).profiles as Array<{options: object}>
+    )[0];
+    assert.equal('danger_full_access' in profile.options, kept);
+    const preserved = setProfileConfiguration(
+      changed,
+      SUBROUTINE,
+      'default',
+      provider,
+      profile.options as typeof options,
+    );
+    assert.deepEqual(subroutineOf(preserved), subroutineOf(changed));
+  }
+
   const boundary = load();
   boundary.workflows = [
     {

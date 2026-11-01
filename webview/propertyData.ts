@@ -77,6 +77,9 @@ function profileConfiguration(
           model: options.model,
           reasoning_effort: options.reasoning_effort,
           extra_args: options.extra_args,
+          ...(options.danger_full_access === true
+            ? {danger_full_access: true as const}
+            : {}),
         },
       }
     : undefined;
