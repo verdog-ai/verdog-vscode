@@ -99,6 +99,8 @@ export interface AgentInvokerOptions {
   model: string | null;
   reasoning_effort: string | null;
   extra_args: string[];
+  /** Codex only: run without its sandbox; omitted unless true. */
+  danger_full_access?: true;
 }
 
 export type AgentProfileParameter = CanonicalObject & {

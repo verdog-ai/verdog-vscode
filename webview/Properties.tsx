@@ -312,6 +312,39 @@ export function Properties({
                   />
                 </dd>
               </div>
+              {draftProfile.provider === 'codex' && (
+                <div>
+                  <dt>
+                    <label htmlFor="property-profile-danger-full-access">
+                      danger_full_access
+                    </label>
+                  </dt>
+                  <dd>
+                    <input
+                      checked={draftProfile.options.danger_full_access === true}
+                      disabled={!settingsWritable}
+                      id="property-profile-danger-full-access"
+                      onChange={event =>
+                        setDraftProfile(current => {
+                          if (current === undefined) {
+                            return current;
+                          }
+                          const {danger_full_access: _, ...options} =
+                            current.options;
+                          return {
+                            ...current,
+                            options: event.target.checked
+                              ? {...options, danger_full_access: true}
+                              : options,
+                          };
+                        })
+                      }
+                      title="Run without Codex's sandbox, for hosts where it cannot start"
+                      type="checkbox"
+                    />
+                  </dd>
+                </div>
+              )}
               <div className="property-action">
                 <dt />
                 <dd>

@@ -109,6 +109,10 @@
         "extra_args": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "danger_full_access": {
+          "const": true,
+          "description": "Codex only: run without Codex's sandbox, for hosts where it cannot start. Omit it otherwise."
         }
       },
       "additionalProperties": false

@@ -25,6 +25,8 @@ test('webview boundaries reject malformed transport fields before host actions',
   };
   assert.equal(isCanvasToHost(session), true);
   assert.equal(isCanvasToHost(configuration), true);
+  const unsandboxed = {...configuration.options, danger_full_access: true};
+  assert.equal(isCanvasToHost({...configuration, options: unsandboxed}), true);
   for (const value of [
     null,
     [],
@@ -32,6 +34,15 @@ test('webview boundaries reject malformed transport fields before host actions',
     {...session, persistent: 'false'},
     {...configuration, provider: 'unknown'},
     {...configuration, options: {extra_args: 'arguments'}},
+    {
+      ...configuration,
+      options: {...configuration.options, danger_full_access: false},
+    },
+    {
+      ...configuration,
+      provider: 'claude',
+      options: {...configuration.options, danger_full_access: true},
+    },
     {kind: 'cancel-navigation', navigationVersion: NaN},
     {kind: 'browse', page: null, target: {scope: 'main'}},
     {kind: 'shown', subroutine: 'main', workflow: {id: 'run'}},
